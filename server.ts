@@ -4,6 +4,11 @@ import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
 import { zeroizeDb, deleteRoom } from '@/lib/db'
 
+declare global {
+  // eslint-disable-next-line no-var
+  var io: SocketIOServer
+}
+
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
 const port = parseInt(process.env.PORT || '3000', 10)

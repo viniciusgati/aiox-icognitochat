@@ -4,10 +4,6 @@ import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
 import { zeroizeDb, deleteRoom } from '@/lib/db'
 
-declare global {
-  // eslint-disable-next-line no-var
-  var io: SocketIOServer
-}
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -39,7 +35,7 @@ app.prepare().then(() => {
   })
 
   // Store io instance globally so API routes can access it
-  global.io = io
+  ;(global as any).io = io
 
   // Presence tracking: roomId → Map<socketId, username>
   const roomUsers = new Map<string, Map<string, string>>()

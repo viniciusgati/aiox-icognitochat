@@ -18,13 +18,15 @@ export function useSocket(
   username: string,
   ephemeral = false,
   onKicked?: () => void,
-  onRoomClosed?: () => void
+  onRoomClosed?: () => void,
+  onForceLogout?: () => void
 ) {
   const socketRef = useRef<Socket | null>(null)
   const keyRef = useRef<CryptoKey | null>(null)
   const messagesRef = useRef<Message[]>([])
   const onKickedRef = useRef(onKicked)
   const onRoomClosedRef = useRef(onRoomClosed)
+  const onForceLogoutRef = useRef(onForceLogout)
   const [messages, setMessages] = useState<Message[]>([])
   const [onlineCount, setOnlineCount] = useState(0)
   const [connected, setConnected] = useState(false)
@@ -34,6 +36,7 @@ export function useSocket(
   // Keep callback refs up to date without re-running the main effect
   useEffect(() => { onKickedRef.current = onKicked }, [onKicked])
   useEffect(() => { onRoomClosedRef.current = onRoomClosed }, [onRoomClosed])
+  useEffect(() => { onForceLogoutRef.current = onForceLogout }, [onForceLogout])
 
   useEffect(() => {
     let socket: Socket
@@ -67,6 +70,11 @@ export function useSocket(
 
       socket.on('room-closed', () => {
         onRoomClosedRef.current?.()
+      })
+
+      socket.on('force-logout', async () => {
+        await fetch('/api/auth/logout', { method: 'POST' })
+        window.location.href = '/'
       })
 
       socket.on(

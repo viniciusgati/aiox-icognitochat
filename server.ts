@@ -2,7 +2,7 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
-import { deleteRoom } from '@/lib/db'
+import { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages } from '@/lib/db'
 
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -38,6 +38,9 @@ app.prepare().then(() => {
 
   // Presence tracking: roomId → Map<socketId, username>
   const roomUsers = new Map<string, Map<string, string>>()
+  // User socket tracking: username → Set<socketId> (for force-logout)
+  const userSockets = new Map<string, Set<string>>()
+  ;(global as any).userSockets = userSockets
   // Ephemeral rooms: deleted from DB when last user leaves
   const ephemeralRooms = new Set<string>()
   // Owner tracking for ephemeral rooms: roomId → socketId
@@ -81,6 +84,8 @@ app.prepare().then(() => {
         socket.join(roomId)
         if (!roomUsers.has(roomId)) roomUsers.set(roomId, new Map())
         roomUsers.get(roomId)!.set(socket.id, username)
+        if (!userSockets.has(username)) userSockets.set(username, new Set())
+        userSockets.get(username)!.add(socket.id)
         if (ephemeral) ephemeralRooms.add(roomId)
 
         // First to join an ephemeral room becomes owner
@@ -170,9 +175,27 @@ app.prepare().then(() => {
           if (users.size === 0) handleRoomEmpty(roomId)
         }
       })
+      // Clean up userSockets tracking
+      userSockets.forEach((socketIds, username) => {
+        socketIds.delete(socket.id)
+        if (socketIds.size === 0) userSockets.delete(username)
+      })
       if (dev) console.log(`[Socket.io] Client disconnected: ${socket.id}`)
     })
   })
+
+  const cleaned = cleanOrphanedEphemeralRooms()
+  console.log(`[Server] Cleaned ${cleaned} orphaned ephemeral rooms`)
+
+  const ttlHours = parseInt(process.env.MESSAGE_TTL_HOURS ?? '24', 10)
+  if (ttlHours > 0) {
+    const deletedOnStartup = deleteExpiredMessages(ttlHours)
+    console.log(`[Server] TTL cleanup: deleted ${deletedOnStartup} messages older than ${ttlHours}h`)
+    setInterval(() => {
+      const deleted = deleteExpiredMessages(ttlHours)
+      console.log(`[Server] TTL cleanup: deleted ${deleted} messages older than ${ttlHours}h`)
+    }, 60 * 60 * 1000)
+  }
 
   httpServer.listen(port, () => {
     console.log(`> Ready on http://${hostname}:${port}`)

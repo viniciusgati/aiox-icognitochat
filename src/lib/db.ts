@@ -74,6 +74,20 @@ export function deleteRoom(slug: string): void {
   db.prepare('DELETE FROM rooms WHERE slug = ?').run(slug)
 }
 
+/** Delete all ephemeral rooms on server startup (orphans from crashes/deploys). */
+export function cleanOrphanedEphemeralRooms(): number {
+  const result = db.prepare('DELETE FROM rooms WHERE is_ephemeral = 1').run()
+  return result.changes
+}
+
+/** Delete messages older than ttlHours. Returns number of deleted rows. */
+export function deleteExpiredMessages(ttlHours: number): number {
+  const result = db
+    .prepare('DELETE FROM messages WHERE created_at < unixepoch() - (? * 3600)')
+    .run(ttlHours)
+  return result.changes
+}
+
 /**
  * Overwrite the SQLite database file with zeros and delete it.
  *

@@ -8,6 +8,7 @@ export default function LoginForm() {
   const searchParams = useSearchParams()
   const rawCallback = searchParams.get('callbackUrl')
   const safeRedirect = rawCallback?.startsWith('/chat') ? rawCallback : '/chat'
+  const isExpired = searchParams.get('expired') === '1'
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -73,6 +74,12 @@ export default function LoginForm() {
           placeholder="••••••••••"
         />
       </div>
+
+      {isExpired && !error && (
+        <p role="alert" className="text-sm text-amber-400">
+          Sessão expirada, faça login novamente.
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="text-sm text-red-400">

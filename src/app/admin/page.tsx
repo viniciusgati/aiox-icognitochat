@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import Link from 'next/link'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -825,12 +826,20 @@ export default function AdminPage() {
           <span className="text-indigo-400 font-bold text-lg">IcognitoChat</span>
           <span className="text-slate-500 text-sm">Admin</span>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-        >
-          Sair
-        </button>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/chat"
+            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            ← Ir para o Chat
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            Sair
+          </button>
+        </div>
       </header>
 
       <div className="border-b border-slate-700 px-6">

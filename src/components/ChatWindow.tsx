@@ -44,6 +44,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     sendImage,
     sendReaction,
     cleanup,
+    disconnect,
     isOwner,
     roomParticipants,
     kickUser,
@@ -335,6 +336,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
               <PrivacyPanel
                 onClose={() => setShowPrivacyPanel(false)}
                 onTtlChange={(ttl) => setLocalTtl(ttl)}
+                onBeforeWipe={disconnect}
               />
             )}
           </div>

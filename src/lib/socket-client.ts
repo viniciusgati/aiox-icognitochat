@@ -364,6 +364,11 @@ export function useSocket(
     socketRef.current?.emit('close-room', { roomId })
   }, [roomId])
 
+  const disconnect = useCallback(() => {
+    socketRef.current?.emit('leave-room', roomId)
+    socketRef.current?.disconnect()
+  }, [roomId])
+
   const reportScreenShare = useCallback(() => {
     socketRef.current?.emit('screen:sharing-detected', { roomId, username })
   }, [roomId, username])
@@ -446,6 +451,7 @@ export function useSocket(
     sendImage,
     sendReaction,
     cleanup,
+    disconnect,
     isOwner,
     roomParticipants,
     kickUser,

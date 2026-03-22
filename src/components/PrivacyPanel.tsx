@@ -4,14 +4,25 @@ import { useState } from 'react'
 import { TTL_OPTIONS, LocalTtlOption, getPrivacyPrefs, savePrivacyPrefs } from '@/lib/privacy-prefs'
 import { wipeDevice } from '@/lib/device-wipe'
 
+const WIPE_ITEMS = [
+  'Sessão ativa (logout)',
+  'Preferências salvas (localStorage)',
+  'Cache do app (Service Worker)',
+  'Histórico de mensagens em memória',
+]
+
+const CONFIRM_WORD = 'APAGAR'
+
 interface Props {
   onClose: () => void
   onTtlChange: (ttl: LocalTtlOption) => void
+  onBeforeWipe?: () => void
 }
 
-export default function PrivacyPanel({ onClose, onTtlChange }: Props) {
+export default function PrivacyPanel({ onClose, onTtlChange, onBeforeWipe }: Props) {
   const [localTtl, setLocalTtl] = useState<LocalTtlOption>(() => getPrivacyPrefs().localTtl)
-  const [confirmWipe, setConfirmWipe] = useState(false)
+  const [showWipeConfirm, setShowWipeConfirm] = useState(false)
+  const [confirmInput, setConfirmInput] = useState('')
   const [wiping, setWiping] = useState(false)
 
   function handleTtlChange(value: LocalTtlOption) {
@@ -21,12 +32,8 @@ export default function PrivacyPanel({ onClose, onTtlChange }: Props) {
   }
 
   async function handleWipe() {
-    if (!confirmWipe) {
-      setConfirmWipe(true)
-      return
-    }
     setWiping(true)
-    await wipeDevice()
+    await wipeDevice(onBeforeWipe)
   }
 
   return (
@@ -81,32 +88,53 @@ export default function PrivacyPanel({ onClose, onTtlChange }: Props) {
         <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">
           Apagar dispositivo
         </p>
-        <p className="text-[11px] text-zinc-600">
-          Encerra a sessão e apaga todos os dados locais (histórico, chaves, cache).
-        </p>
-        {!confirmWipe ? (
-          <button
-            onClick={handleWipe}
-            disabled={wiping}
-            className="rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-4 py-2 text-xs font-semibold text-red-400 transition-all duration-150 disabled:opacity-40"
-          >
-            🗑 Limpar tudo e sair
-          </button>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[11px] text-red-400 font-medium text-center">
-              Isso irá apagar tudo. Tem certeza?
+
+        {!showWipeConfirm ? (
+          <>
+            <p className="text-[11px] text-zinc-600">
+              Encerra a sessão e apaga todos os dados locais.
             </p>
+            <button
+              onClick={() => setShowWipeConfirm(true)}
+              className="rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-4 py-2 text-xs font-semibold text-red-400 transition-all duration-150"
+            >
+              🗑 Limpar tudo e sair
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] text-red-400 font-semibold">
+              Isso irá apagar permanentemente:
+            </p>
+            <ul className="text-[11px] text-zinc-500 space-y-0.5 pl-3">
+              {WIPE_ITEMS.map((item) => (
+                <li key={item} className="list-disc">{item}</li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-zinc-400 mt-1">
+              Digite <span className="font-bold text-red-400">{CONFIRM_WORD}</span> para confirmar:
+            </p>
+            <input
+              type="text"
+              value={confirmInput}
+              onChange={(e) => setConfirmInput(e.target.value)}
+              placeholder={CONFIRM_WORD}
+              disabled={wiping}
+              className="rounded-lg bg-surface-800 border border-white/[0.08] px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-700 focus:outline-none focus:ring-1 focus:ring-red-500/50 disabled:opacity-40"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
             <div className="flex gap-2">
               <button
                 onClick={handleWipe}
-                disabled={wiping}
-                className="flex-1 rounded-xl bg-red-600 hover:bg-red-500 px-3 py-2 text-xs font-bold text-white transition-all duration-150 disabled:opacity-40"
+                disabled={wiping || confirmInput !== CONFIRM_WORD}
+                className="flex-1 rounded-xl bg-red-600 hover:bg-red-500 disabled:bg-red-900/40 px-3 py-2 text-xs font-bold text-white transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {wiping ? 'Apagando…' : 'Sim, apagar'}
+                {wiping ? 'Apagando…' : 'Apagar tudo'}
               </button>
               <button
-                onClick={() => setConfirmWipe(false)}
+                onClick={() => { setShowWipeConfirm(false); setConfirmInput('') }}
                 disabled={wiping}
                 className="flex-1 rounded-xl bg-surface-700 hover:bg-surface-600 border border-white/[0.06] px-3 py-2 text-xs font-medium text-zinc-400 transition-all duration-150 disabled:opacity-40"
               >

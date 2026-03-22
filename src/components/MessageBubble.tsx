@@ -58,16 +58,25 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
       {/* Reactions display */}
       {hasReactions && (
         <div className="flex flex-wrap gap-1 mt-1 px-1">
-          {EMOJI_LIST.filter((e) => (message.reactions?.[e] ?? 0) > 0).map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => onReact?.(message.id, emoji)}
-              className="flex items-center gap-0.5 bg-slate-700 hover:bg-slate-600 rounded-full px-2 py-0.5 text-xs transition-colors"
-            >
-              <span>{emoji}</span>
-              <span className="text-slate-300">{message.reactions![emoji]}</span>
-            </button>
-          ))}
+          {EMOJI_LIST.filter((e) => (message.reactions?.[e] ?? 0) > 0).map((emoji) => {
+            const reacted = message.myReactions?.includes(emoji) ?? false
+            return (
+              <button
+                key={emoji}
+                onClick={() => onReact?.(message.id, emoji)}
+                className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs transition-colors ${
+                  reacted
+                    ? 'bg-indigo-600 hover:bg-indigo-500 ring-1 ring-indigo-400'
+                    : 'bg-slate-700 hover:bg-slate-600'
+                }`}
+              >
+                <span>{emoji}</span>
+                <span className={reacted ? 'text-indigo-200' : 'text-slate-300'}>
+                  {message.reactions![emoji]}
+                </span>
+              </button>
+            )
+          })}
         </div>
       )}
 

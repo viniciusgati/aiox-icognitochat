@@ -203,6 +203,27 @@ app.prepare().then(() => {
     )
 
     socket.on(
+      'send-image',
+      (data: {
+        roomId: string
+        imageId: string
+        iv: string
+        username: string
+        timestamp: number
+        msgId: string
+      }) => {
+        // Relay encrypted image reference — server never sees plaintext
+        socket.to(data.roomId).emit('receive-image', {
+          imageId: data.imageId,
+          iv: data.iv,
+          username: data.username,
+          timestamp: data.timestamp,
+          msgId: data.msgId,
+        })
+      }
+    )
+
+    socket.on(
       'react-to-message',
       ({ roomId, messageId, emoji }: { roomId: string; messageId: string; emoji: string }) => {
         const ALLOWED_EMOJIS = new Set(['👍', '❤️', '😂', '😮', '🔥', '👏'])
@@ -222,10 +243,15 @@ app.prepare().then(() => {
           reactors.add(socket.id)
         }
 
-        // Build counts object and broadcast
+        // Build counts object and broadcast to room
         const counts: Record<string, number> = {}
         emojiMap.forEach((set, e) => { if (set.size > 0) counts[e] = set.size })
         io.to(roomId).emit('reaction-updated', { messageId, counts })
+
+        // Tell this socket which emojis they've personally reacted to
+        const myReactions: string[] = []
+        emojiMap.forEach((set, e) => { if (set.has(socket.id)) myReactions.push(e) })
+        socket.emit('my-reaction-state', { messageId, myReactions })
       }
     )
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
-import { deriveRoomKey, encryptMessage, decryptMessage } from './crypto'
+import { deriveRoomKey, encryptMessage, decryptMessage, encryptBinary, decryptBinary } from './crypto'
 import { clearCryptoKey, zeroizeMessages } from './secure-cleanup'
 
 export interface ReplyTo {
@@ -19,6 +19,9 @@ export interface Message {
   own: boolean
   replyTo?: ReplyTo
   reactions?: Record<string, number>
+  myReactions?: string[]
+  /** Decrypted image as an object URL (present for image messages) */
+  imageSrc?: string
 }
 
 export function useSocket(
@@ -43,6 +46,8 @@ export function useSocket(
   const onJoinDeniedRef = useRef(onJoinDenied)
   // TTL removal timers: msgId → timeout handle
   const ttlTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Blob URLs created for image messages — revoked on cleanup
+  const blobUrls = useRef<string[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [onlineCount, setOnlineCount] = useState(0)
   const [connected, setConnected] = useState(false)
@@ -86,6 +91,7 @@ export function useSocket(
     // Capture ref value for cleanup (react-hooks/exhaustive-deps)
     const timeouts = typingTimeouts.current
     const timers = ttlTimers.current
+    const urls = blobUrls.current
 
     async function init() {
       keyRef.current = await deriveRoomKey(roomId)
@@ -202,6 +208,54 @@ export function useSocket(
         }
       )
 
+      socket.on(
+        'my-reaction-state',
+        ({ messageId, myReactions }: { messageId: string; myReactions: string[] }) => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, myReactions } : m))
+          )
+        }
+      )
+
+      socket.on(
+        'receive-image',
+        async (data: {
+          imageId: string
+          iv: string
+          username: string
+          timestamp: number
+          msgId: string
+        }) => {
+          if (!keyRef.current) return
+          if (messageTtlSeconds && Date.now() - data.timestamp >= messageTtlSeconds * 1000) return
+          try {
+            const res = await fetch(`/api/rooms/${roomId}/images/${data.imageId}`)
+            if (!res.ok) return
+            const encrypted = await res.arrayBuffer()
+            const plain = await decryptBinary(keyRef.current, encrypted, data.iv)
+            const blob = new Blob([plain], { type: 'image/webp' })
+            const imageSrc = URL.createObjectURL(blob)
+            urls.push(imageSrc)
+            const newMsg: Message = {
+              id: data.msgId,
+              username: data.username,
+              content: '',
+              timestamp: data.timestamp,
+              own: false,
+              imageSrc,
+            }
+            setMessages((prev) => {
+              const next = [...prev, newMsg]
+              messagesRef.current = next
+              return next
+            })
+            scheduleExpiry(data.msgId, data.timestamp)
+          } catch {
+            // Silently ignore decrypt/fetch errors
+          }
+        }
+      )
+
       socket.on('disconnect', () => {
         setConnected(false)
       })
@@ -215,6 +269,8 @@ export function useSocket(
       timeouts.clear()
       timers.forEach((t) => clearTimeout(t))
       timers.clear()
+      urls.forEach((u) => URL.revokeObjectURL(u))
+      urls.length = 0
       socket?.emit('leave-room', roomId)
       socket?.disconnect()
     }
@@ -301,11 +357,82 @@ export function useSocket(
     socketRef.current?.emit('close-room', { roomId })
   }, [roomId])
 
+  const sendImage = useCallback(
+    async (file: File): Promise<{ error?: string }> => {
+      if (!socketRef.current || !keyRef.current) return { error: 'Não conectado' }
+
+      // Convert to WebP with max 1920px dimension
+      let webpBlob: Blob
+      try {
+        const bitmap = await createImageBitmap(file)
+        const MAX_DIM = 1920
+        let { width, height } = bitmap
+        if (width > MAX_DIM || height > MAX_DIM) {
+          const ratio = Math.min(MAX_DIM / width, MAX_DIM / height)
+          width = Math.round(width * ratio)
+          height = Math.round(height * ratio)
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d')!.drawImage(bitmap, 0, 0, width, height)
+        webpBlob = await new Promise<Blob>((res, rej) =>
+          canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), 'image/webp', 0.85)
+        )
+      } catch {
+        return { error: 'Erro ao processar imagem' }
+      }
+
+      // Encrypt before upload
+      const { ciphertext, iv } = await encryptBinary(keyRef.current, await webpBlob.arrayBuffer())
+
+      // Upload encrypted blob
+      const res = await fetch(`/api/rooms/${roomId}/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: ciphertext,
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        return { error: (data as { error?: string }).error ?? 'Erro ao enviar imagem' }
+      }
+
+      const { imageId } = (await res.json()) as { imageId: string }
+      const timestamp = Date.now()
+      const msgId = `${timestamp}-${username}-${Math.random().toString(36).slice(2)}`
+
+      socketRef.current.emit('send-image', { roomId, imageId, iv, username, timestamp, msgId })
+
+      // Show own image immediately using the plaintext blob
+      const imageSrc = URL.createObjectURL(webpBlob)
+      blobUrls.current.push(imageSrc)
+      const ownMsg: Message = {
+        id: msgId,
+        username,
+        content: '',
+        timestamp,
+        own: true,
+        imageSrc,
+      }
+      setMessages((prev) => {
+        const next = [...prev, ownMsg]
+        messagesRef.current = next
+        return next
+      })
+      scheduleExpiry(msgId, timestamp)
+
+      return {}
+    },
+    [roomId, username, scheduleExpiry]
+  )
+
   return {
     messages,
     onlineCount,
     connected,
     sendMessage,
+    sendImage,
     sendReaction,
     cleanup,
     isOwner,

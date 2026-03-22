@@ -29,6 +29,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     onlineCount,
     connected,
     sendMessage,
+    sendImage,
     sendReaction,
     cleanup,
     isOwner,
@@ -93,11 +94,13 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       unreadRef.current = 0
       document.title = originalTitleRef.current || 'IcognitoChat'
     }
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibilityChange = () => {
       if (!document.hidden) reset()
-    })
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('focus', reset)
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', reset)
     }
   }, [])

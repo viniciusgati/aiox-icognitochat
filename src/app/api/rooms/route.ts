@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getIronSession } from 'iron-session'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
-import db from '@/lib/db'
+import db, { getSetting } from '@/lib/db'
 import { sessionOptions, SessionData } from '@/lib/session'
 
 const ALLOWED_TTLS = new Set([30, 60, 300, 600, 1800, 3600])
@@ -48,6 +48,18 @@ export async function POST(req: NextRequest) {
 
   if (!session.isLoggedIn) {
     return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  }
+
+  // Check global settings
+  if (!session.isAdmin) {
+    const allowRoomCreation = getSetting('allow_room_creation') ?? '1'
+    if (allowRoomCreation !== '1') {
+      return NextResponse.json({ error: 'Criação de salas desativada pelo administrador' }, { status: 403 })
+    }
+    const adminOnlyChat = getSetting('admin_only_chat') ?? '0'
+    if (adminOnlyChat === '1') {
+      return NextResponse.json({ error: 'Apenas o administrador pode criar salas neste modo' }, { status: 403 })
+    }
   }
 
   const body = await req.json()

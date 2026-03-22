@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db from '@/lib/db'
+import { requireAdmin } from '@/lib/admin-auth'
 
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const masterPassword = req.headers.get('x-master-password')
-  if (!masterPassword || masterPassword !== process.env.MASTER_PASSWORD) {
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  }
+interface Props {
+  params: Promise<{ id: string }>
+}
 
-  const id = parseInt(params.id, 10)
+export async function DELETE(req: NextRequest, { params }: Props) {
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
+
+  const { id: idStr } = await params
+  const id = parseInt(idStr, 10)
   if (isNaN(id)) {
     return NextResponse.json({ error: 'ID inválido' }, { status: 400 })
+  }
+
+  // Cannot delete yourself
+  if (id === auth.userId) {
+    return NextResponse.json({ error: 'Não é possível remover o próprio usuário admin' }, { status: 400 })
   }
 
   const user = db

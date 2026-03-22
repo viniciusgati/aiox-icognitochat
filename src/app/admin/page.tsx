@@ -7,6 +7,7 @@ import { useState, useCallback, useEffect } from 'react'
 interface User {
   id: number
   username: string
+  is_admin: number
   created_at: number
   last_seen_at: number | null
 }
@@ -34,7 +35,12 @@ interface Stats {
   imagesDirBytes: number
 }
 
-type Tab = 'overview' | 'users' | 'rooms' | 'system'
+interface Settings {
+  allow_room_creation: string
+  admin_only_chat: string
+}
+
+type Tab = 'overview' | 'users' | 'rooms' | 'settings' | 'system'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,64 +83,9 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
   )
 }
 
-// ─── Auth wall ────────────────────────────────────────────────────────────────
-
-function AuthWall({ onAuth }: { onAuth: (pwd: string) => void }) {
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    const res = await fetch('/api/auth/admin/users', {
-      headers: { 'x-master-password': password },
-    })
-    setLoading(false)
-    if (!res.ok) {
-      setError('Senha incorreta ou muitas tentativas.')
-      return
-    }
-    onAuth(password)
-  }
-
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-slate-900">
-      <div className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-indigo-400">Admin</h1>
-        <p className="mt-2 text-slate-400">IcognitoChat — Gerenciamento</p>
-      </div>
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <div>
-          <label htmlFor="master-pwd" className="block text-sm font-medium text-slate-300 mb-1">
-            Senha Mestra
-          </label>
-          <input
-            id="master-pwd"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 font-semibold text-white transition-colors"
-        >
-          {loading ? 'Verificando…' : 'Entrar'}
-        </button>
-      </form>
-    </main>
-  )
-}
-
 // ─── Overview tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ password }: { password: string }) {
+function OverviewTab() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -143,9 +94,7 @@ function OverviewTab({ password }: { password: string }) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/auth/admin/stats', {
-        headers: { 'x-master-password': password },
-      })
+      const res = await fetch('/api/auth/admin/stats')
       if (!res.ok) { setError('Erro ao carregar stats'); return }
       setStats(await res.json())
     } catch {
@@ -153,7 +102,7 @@ function OverviewTab({ password }: { password: string }) {
     } finally {
       setLoading(false)
     }
-  }, [password])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -185,7 +134,7 @@ function OverviewTab({ password }: { password: string }) {
 
 // ─── Users tab ────────────────────────────────────────────────────────────────
 
-function UsersTab({ password }: { password: string }) {
+function UsersTab() {
   const [users, setUsers] = useState<User[]>([])
   const [newCreds, setNewCreds] = useState<{ username: string; password: string } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -195,7 +144,7 @@ function UsersTab({ password }: { password: string }) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/auth/admin/users', { headers: { 'x-master-password': password } })
+      const res = await fetch('/api/auth/admin/users')
       if (!res.ok) { setError('Erro ao carregar usuários'); return }
       const data = await res.json()
       setUsers(data.users)
@@ -204,17 +153,14 @@ function UsersTab({ password }: { password: string }) {
     } finally {
       setLoading(false)
     }
-  }, [password])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
   async function handleCreate() {
     setError('')
     setNewCreds(null)
-    const res = await fetch('/api/auth/admin/users', {
-      method: 'POST',
-      headers: { 'x-master-password': password },
-    })
+    const res = await fetch('/api/auth/admin/users', { method: 'POST' })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? 'Erro ao criar usuário'); return }
     setNewCreds({ username: data.username, password: data.password })
@@ -224,10 +170,7 @@ function UsersTab({ password }: { password: string }) {
   async function handleDelete(user: User) {
     if (!window.confirm(`Remover "${user.username}"? Esta ação não pode ser desfeita.`)) return
     setError('')
-    const res = await fetch(`/api/auth/admin/users/${user.id}`, {
-      method: 'DELETE',
-      headers: { 'x-master-password': password },
-    })
+    const res = await fetch(`/api/auth/admin/users/${user.id}`, { method: 'DELETE' })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? 'Erro ao remover'); return }
     await load()
@@ -269,6 +212,7 @@ function UsersTab({ password }: { password: string }) {
             <thead className="bg-slate-800 text-slate-400 uppercase text-xs">
               <tr>
                 <th className="px-4 py-3">Usuário</th>
+                <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Criado em</th>
                 <th className="px-4 py-3">Último acesso</th>
                 <th className="px-4 py-3" />
@@ -278,21 +222,30 @@ function UsersTab({ password }: { password: string }) {
               {users.map((user) => (
                 <tr key={user.id} className="bg-slate-900 hover:bg-slate-800/50 transition-colors">
                   <td className="px-4 py-3 font-mono text-slate-200">{user.username}</td>
+                  <td className="px-4 py-3">
+                    {user.is_admin ? (
+                      <span className="text-xs text-indigo-400 bg-indigo-900/30 px-2 py-0.5 rounded-full">admin</span>
+                    ) : (
+                      <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">usuário</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-slate-400">{formatDate(user.created_at)}</td>
                   <td className="px-4 py-3 text-slate-400">{formatDate(user.last_seen_at)}</td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleDelete(user)}
-                      className="text-xs rounded px-2 py-1 bg-red-900/50 hover:bg-red-700 text-red-300 hover:text-white transition-colors"
-                    >
-                      Remover
-                    </button>
+                    {!user.is_admin && (
+                      <button
+                        onClick={() => handleDelete(user)}
+                        className="text-xs rounded px-2 py-1 bg-red-900/50 hover:bg-red-700 text-red-300 hover:text-white transition-colors"
+                      >
+                        Remover
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                     Nenhum usuário cadastrado
                   </td>
                 </tr>
@@ -307,7 +260,7 @@ function UsersTab({ password }: { password: string }) {
 
 // ─── Rooms tab ────────────────────────────────────────────────────────────────
 
-function RoomsTab({ password }: { password: string }) {
+function RoomsTab() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -316,7 +269,7 @@ function RoomsTab({ password }: { password: string }) {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/auth/admin/rooms', { headers: { 'x-master-password': password } })
+      const res = await fetch('/api/auth/admin/rooms')
       if (!res.ok) { setError('Erro ao carregar salas'); return }
       const data = await res.json()
       setRooms(data.rooms)
@@ -325,7 +278,7 @@ function RoomsTab({ password }: { password: string }) {
     } finally {
       setLoading(false)
     }
-  }, [password])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -333,10 +286,7 @@ function RoomsTab({ password }: { password: string }) {
     const label = room.is_ephemeral ? `sala rápida "${room.slug}"` : `sala "${room.name}"`
     if (!window.confirm(`Remover a ${label}? Todos os participantes serão desconectados.`)) return
     setError('')
-    const res = await fetch(`/api/auth/admin/rooms/${room.slug}`, {
-      method: 'DELETE',
-      headers: { 'x-master-password': password },
-    })
+    const res = await fetch(`/api/auth/admin/rooms/${room.slug}`, { method: 'DELETE' })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? 'Erro ao remover sala'); return }
     await load()
@@ -414,9 +364,129 @@ function RoomsTab({ password }: { password: string }) {
   )
 }
 
+// ─── Settings tab ─────────────────────────────────────────────────────────────
+
+function SettingsTab() {
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/admin/settings')
+      if (!res.ok) { setError('Erro ao carregar configurações'); return }
+      setSettings(await res.json())
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleSave() {
+    if (!settings) return
+    setSaving(true)
+    setError('')
+    setSaved(false)
+    try {
+      const res = await fetch('/api/auth/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      })
+      if (!res.ok) { setError('Erro ao salvar'); return }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <p className="text-slate-500 text-sm py-8 text-center">Carregando…</p>
+  if (!settings) return null
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <p className="text-sm text-slate-400">
+        Configurações globais aplicadas a todos os usuários não-admin.
+      </p>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      {saved && <p className="text-sm text-green-400">Configurações salvas.</p>}
+
+      <div className="space-y-4">
+        {/* allow_room_creation */}
+        <label className="flex items-start gap-4 p-4 rounded-xl bg-slate-800 border border-slate-700 cursor-pointer">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-slate-200">Permitir criação de salas</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Quando desativado, apenas o admin pode criar novas salas.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={settings.allow_room_creation === '1'}
+            onClick={() => setSettings(s => s ? { ...s, allow_room_creation: s.allow_room_creation === '1' ? '0' : '1' } : s)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              settings.allow_room_creation === '1' ? 'bg-indigo-600' : 'bg-slate-600'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                settings.allow_room_creation === '1' ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+
+        {/* admin_only_chat */}
+        <label className="flex items-start gap-4 p-4 rounded-xl bg-slate-800 border border-slate-700 cursor-pointer">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-slate-200">Modo suporte — usuários só falam com o admin</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Quando ativado, usuários não-admin só podem acessar a sala Geral.
+              Impede conversas entre usuários.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={settings.admin_only_chat === '1'}
+            onClick={() => setSettings(s => s ? { ...s, admin_only_chat: s.admin_only_chat === '1' ? '0' : '1' } : s)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              settings.admin_only_chat === '1' ? 'bg-indigo-600' : 'bg-slate-600'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                settings.admin_only_chat === '1' ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-6 py-2 text-sm font-semibold text-white transition-colors"
+      >
+        {saving ? 'Salvando…' : 'Salvar configurações'}
+      </button>
+    </div>
+  )
+}
+
 // ─── System tab ───────────────────────────────────────────────────────────────
 
-function SystemTab({ password }: { password: string }) {
+function SystemTab() {
   const [confirming, setConfirming] = useState(false)
   const [confirmText, setConfirmText] = useState('')
   const [result, setResult] = useState('')
@@ -429,10 +499,7 @@ function SystemTab({ password }: { password: string }) {
     setError('')
     setResult('')
     try {
-      const res = await fetch('/api/auth/admin/destroy', {
-        method: 'POST',
-        headers: { 'x-master-password': password },
-      })
+      const res = await fetch('/api/auth/admin/destroy', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? 'Erro'); return }
       const d = data.destroyed
@@ -508,16 +575,16 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Visão Geral' },
   { id: 'users', label: 'Usuários' },
   { id: 'rooms', label: 'Salas' },
+  { id: 'settings', label: 'Configurações' },
   { id: 'system', label: 'Sistema' },
 ]
 
 export default function AdminPage() {
-  const [password, setPassword] = useState('')
-  const [authed, setAuthed] = useState(false)
   const [tab, setTab] = useState<Tab>('overview')
 
-  if (!authed) {
-    return <AuthWall onAuth={(pwd) => { setPassword(pwd); setAuthed(true) }} />
+  async function handleLogout() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    window.location.href = '/'
   }
 
   return (
@@ -528,7 +595,7 @@ export default function AdminPage() {
           <span className="text-slate-500 text-sm">Admin</span>
         </div>
         <button
-          onClick={() => { setAuthed(false); setPassword('') }}
+          onClick={handleLogout}
           className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
         >
           Sair
@@ -554,10 +621,11 @@ export default function AdminPage() {
       </div>
 
       <div className="p-6 max-w-5xl">
-        {tab === 'overview' && <OverviewTab password={password} />}
-        {tab === 'users' && <UsersTab password={password} />}
-        {tab === 'rooms' && <RoomsTab password={password} />}
-        {tab === 'system' && <SystemTab password={password} />}
+        {tab === 'overview' && <OverviewTab />}
+        {tab === 'users' && <UsersTab />}
+        {tab === 'rooms' && <RoomsTab />}
+        {tab === 'settings' && <SettingsTab />}
+        {tab === 'system' && <SystemTab />}
       </div>
     </main>
   )

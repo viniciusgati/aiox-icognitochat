@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import CreateRoomModal from './CreateRoomModal'
+import { getUserColor, getUserInitials } from '@/lib/user-color'
 
 interface Room {
   id: number
@@ -10,6 +11,30 @@ interface Room {
   name: string
   description?: string
   created_at?: number
+}
+
+function UserAvatar({ username }: { username: string }) {
+  const color = getUserColor(username)
+  const initials = getUserInitials(username)
+  return (
+    <div
+      className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 select-none"
+      style={{ backgroundColor: color }}
+      aria-hidden="true"
+    >
+      {initials}
+    </div>
+  )
+}
+
+function RoomSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="h-14 rounded-xl bg-surface-800 border border-white/[0.04] animate-pulse" />
+      ))}
+    </div>
+  )
 }
 
 export default function RoomList({ username }: { username: string }) {
@@ -49,57 +74,80 @@ export default function RoomList({ username }: { username: string }) {
   return (
     <>
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-indigo-400 font-bold text-lg">IcognitoChat</span>
-          <span className="text-slate-500 text-sm">— {username}</span>
+      <header className="glass sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.06] px-5 py-3.5">
+        <div className="flex items-center gap-3">
+          <span className="text-gradient font-bold text-base tracking-tight">IcognitoChat</span>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-        >
-          Sair
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <UserAvatar username={username} />
+            <span className="text-xs text-zinc-400 font-medium">{username}</span>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors px-2 py-1 rounded-lg hover:bg-surface-700"
+          >
+            Sair
+          </button>
+        </div>
       </header>
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto p-4">
-        <div className="max-w-lg mx-auto space-y-2">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-slate-200 font-semibold text-lg">Salas</h1>
+      <main className="flex-1 overflow-y-auto p-5">
+        <div className="max-w-lg mx-auto space-y-3">
+          {/* Section header */}
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h1 className="text-zinc-100 font-semibold text-base">Salas</h1>
+              <p className="text-xs text-zinc-600 mt-0.5">
+                {loading ? '…' : `${rooms.length} disponíve${rooms.length === 1 ? 'l' : 'is'}`}
+              </p>
+            </div>
             <button
               onClick={() => setShowModal(true)}
-              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white transition-colors"
+              className="rounded-xl bubble-own hover:opacity-90 px-3.5 py-2 text-sm font-semibold text-white transition-all duration-150 shadow-glow-sm"
             >
               + Nova Sala
             </button>
           </div>
 
           {loading ? (
-            <p className="text-slate-500 text-sm text-center py-8">Carregando salas…</p>
+            <RoomSkeleton />
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {rooms.map((room) => (
                 <li key={room.id}>
                   <button
                     onClick={() => router.push(`/chat/${room.slug}`)}
-                    className="w-full text-left rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-3 transition-colors"
+                    className="group w-full text-left rounded-xl bg-surface-800 hover:bg-surface-700 border border-white/[0.05] hover:border-white/[0.09] px-4 py-3 transition-all duration-150"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400">#</span>
-                      <span className="text-slate-100 font-medium">{room.name}</span>
+                    <div className="flex items-center gap-3">
+                      {/* Channel icon */}
+                      <span className="text-zinc-600 group-hover:text-zinc-400 transition-colors font-mono text-sm">#</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-zinc-200 group-hover:text-zinc-100 font-medium text-sm transition-colors">
+                          {room.name}
+                        </span>
+                        {room.description && (
+                          <p className="text-xs text-zinc-600 truncate mt-0.5">{room.description}</p>
+                        )}
+                      </div>
                       {room.slug === 'general' && (
-                        <span className="ml-auto text-xs text-indigo-400 bg-indigo-900/40 px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-medium text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full shrink-0">
                           geral
                         </span>
                       )}
+                      {/* Arrow */}
+                      <span className="text-zinc-700 group-hover:text-zinc-400 transition-colors text-xs">→</span>
                     </div>
-                    {room.description && (
-                      <p className="mt-1 text-sm text-slate-500 ml-5">{room.description}</p>
-                    )}
                   </button>
                 </li>
               ))}
+              {rooms.length === 0 && (
+                <li className="text-center text-zinc-600 text-sm py-12">
+                  Nenhuma sala ainda. Crie a primeira!
+                </li>
+              )}
             </ul>
           )}
         </div>

@@ -11,6 +11,7 @@ const THROTTLE_MS = 60_000
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const session = await getIronSession<SessionData>(req, res, sessionOptions)
+  const isAdminRoute = req.nextUrl.pathname.startsWith('/admin')
 
   if (!session.isLoggedIn) {
     const callbackUrl = encodeURIComponent(req.nextUrl.pathname)
@@ -27,6 +28,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL(`/?expired=1&callbackUrl=${callbackUrl}`, req.url))
   }
 
+  // Rota admin requer isAdmin
+  if (isAdminRoute && !session.isAdmin) {
+    return NextResponse.redirect(new URL('/', req.url))
+  }
+
   // Atualizar lastSeenAt com throttle (máx 1x por minuto)
   if (now - lastSeen > THROTTLE_MS) {
     session.lastSeenAt = now
@@ -37,5 +43,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/chat/:path*'],
+  matcher: ['/chat/:path*', '/admin/:path*', '/admin'],
 }

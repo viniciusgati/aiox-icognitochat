@@ -1,29 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import fs from 'fs'
 import db, { IMAGES_DIR } from '@/lib/db'
-import { RateLimiter } from '@/lib/rate-limit'
+import { requireAdmin } from '@/lib/admin-auth'
 
-const ADMIN_LIMIT = 10
-const ADMIN_WINDOW_MS = 60_000
-const statsLimiter = new RateLimiter()
-setInterval(() => statsLimiter.cleanup(ADMIN_WINDOW_MS), ADMIN_WINDOW_MS * 2)
-
-function getIp(req: NextRequest): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? '127.0.0.1'
-}
-
-export async function GET(req: NextRequest) {
-  const ip = getIp(req)
-  const { allowed, retryAfter } = statsLimiter.check(ip, ADMIN_LIMIT, ADMIN_WINDOW_MS)
-  if (!allowed) {
-    return NextResponse.json({ error: 'Too many requests', retryAfter }, { status: 429 })
-  }
-
-  const masterPassword = req.headers.get('x-master-password')
-  if (!masterPassword || masterPassword !== process.env.MASTER_PASSWORD) {
-    statsLimiter.recordFailure(ip)
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  }
+export async function GET() {
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
 
   const totalUsers = (db.prepare('SELECT COUNT(*) as n FROM users').get() as { n: number }).n
   const totalRooms = (db.prepare('SELECT COUNT(*) as n FROM rooms').get() as { n: number }).n

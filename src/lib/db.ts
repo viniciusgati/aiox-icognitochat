@@ -79,6 +79,30 @@ try {
   // Column already exists — ignore
 }
 
+// Migration: add is_admin column to users if not present
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`)
+} catch {
+  // Column already exists — ignore
+}
+
+// Migration: add global_settings table if not present
+db.exec(`
+  CREATE TABLE IF NOT EXISTS global_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`)
+
+// Seed default settings
+const settingsDefaults: Record<string, string> = {
+  allow_room_creation: '1',
+  admin_only_chat: '0',
+}
+for (const [key, value] of Object.entries(settingsDefaults)) {
+  db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)').run(key, value)
+}
+
 // Seed: sala "Geral" sempre presente
 db.prepare(`
   INSERT OR IGNORE INTO rooms (slug, name, description, is_private)
@@ -86,6 +110,17 @@ db.prepare(`
 `).run()
 
 export default db
+
+/** Read a global setting by key. Returns null if not found. */
+export function getSetting(key: string): string | null {
+  const row = db.prepare('SELECT value FROM global_settings WHERE key = ?').get(key) as { value: string } | undefined
+  return row?.value ?? null
+}
+
+/** Write a global setting. */
+export function setSetting(key: string, value: string): void {
+  db.prepare('INSERT OR REPLACE INTO global_settings (key, value) VALUES (?, ?)').run(key, value)
+}
 
 /** Delete image files for a room from disk. Returns number of deleted files. */
 export function deleteRoomImages(slug: string): number {

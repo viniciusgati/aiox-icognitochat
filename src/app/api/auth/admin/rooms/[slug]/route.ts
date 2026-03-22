@@ -1,32 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import db, { deleteRoom } from '@/lib/db'
-import { RateLimiter } from '@/lib/rate-limit'
-
-const ADMIN_LIMIT = 10
-const ADMIN_WINDOW_MS = 60_000
-const limiter = new RateLimiter()
-setInterval(() => limiter.cleanup(ADMIN_WINDOW_MS), ADMIN_WINDOW_MS * 2)
-
-function getIp(req: NextRequest): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? '127.0.0.1'
-}
+import { requireAdmin } from '@/lib/admin-auth'
 
 interface Props {
   params: Promise<{ slug: string }>
 }
 
 export async function DELETE(req: NextRequest, { params }: Props) {
-  const ip = getIp(req)
-  const { allowed, retryAfter } = limiter.check(ip, ADMIN_LIMIT, ADMIN_WINDOW_MS)
-  if (!allowed) {
-    return NextResponse.json({ error: 'Too many requests', retryAfter }, { status: 429 })
-  }
-
-  const masterPassword = req.headers.get('x-master-password')
-  if (!masterPassword || masterPassword !== process.env.MASTER_PASSWORD) {
-    limiter.recordFailure(ip)
-    return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  }
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
 
   const { slug } = await params
 

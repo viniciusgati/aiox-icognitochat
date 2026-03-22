@@ -2,7 +2,7 @@ import { getIronSession } from 'iron-session'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { sessionOptions, SessionData } from '@/lib/session'
-import db from '@/lib/db'
+import db, { getSetting } from '@/lib/db'
 import ChatWindow from '@/components/ChatWindow'
 
 interface Props {
@@ -19,6 +19,11 @@ export default async function RoomPage({ params, searchParams }: Props) {
 
   const { roomId } = await params
   const { max } = await searchParams
+
+  // admin_only_chat: non-admins can only access the 'general' room
+  if (!session.isAdmin && getSetting('admin_only_chat') === '1' && roomId !== 'general') {
+    redirect('/chat/general')
+  }
   const maxParticipants = max ? parseInt(max, 10) : undefined
 
   const room = db

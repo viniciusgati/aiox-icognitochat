@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useSocket } from '@/lib/socket-client'
 import type { Message, ReplyTo } from '@/lib/socket-client'
 import MessageBubble from './MessageBubble'
+import NotificationSettings from './NotificationSettings'
+import { getPrefs, playSound } from '@/lib/notification-prefs'
 
 interface Props {
   roomId: string
@@ -69,6 +71,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const [replyingTo, setReplyingTo] = useState<ReplyTo | null>(null)
   const [imageError, setImageError] = useState('')
   const [sendingImage, setSendingImage] = useState(false)
+  const [showNotifSettings, setShowNotifSettings] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   // Tab badge: unread count when tab is hidden
@@ -80,13 +83,15 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Tab badge: track unread messages when hidden
+  // Tab badge + notification sound when window is hidden
   useEffect(() => {
     const lastMsg = messages[messages.length - 1]
     if (!lastMsg || lastMsg.own) return
     if (document.hidden) {
       unreadRef.current += 1
       document.title = `(${unreadRef.current}) IcognitoChat`
+      const prefs = getPrefs()
+      if (prefs.enabled) playSound(prefs.sound)
     }
   }, [messages])
 
@@ -189,21 +194,20 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const showAdminControls = isOwner && isEphemeral
 
   return (
-    // h-dvh: uses dynamic viewport height — accounts for mobile browser chrome/keyboard
-    <div className="flex flex-col h-dvh bg-slate-900 text-slate-100 overscroll-none">
-      {/* Header — pt-safe for notch */}
-      <header className="flex items-center justify-between border-b border-slate-700 px-4 py-3 shrink-0 pt-safe">
+    <div className="flex flex-col h-dvh bg-surface-950 text-zinc-100 overscroll-none">
+      {/* Header — glass effect, pt-safe for notch */}
+      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0 pt-safe sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <Link
             href="/chat"
-            className="text-slate-400 hover:text-slate-200 transition-colors text-lg leading-none"
+            className="text-zinc-500 hover:text-zinc-200 transition-colors text-lg leading-none"
           >
             ←
           </Link>
           <div className="flex items-center gap-2">
-            <span className="text-slate-100 font-semibold">#{displayName}</span>
+            <span className="text-zinc-100 font-semibold">#{displayName}</span>
             {isEphemeral && (
-              <span className="text-xs text-amber-400 bg-amber-900/30 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-medium text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
                 efêmera
               </span>
             )}
@@ -213,30 +217,44 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
           {showAdminControls && (
             <button
               onClick={handleCloseRoom}
-              className="rounded-lg bg-red-700 hover:bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+              className="rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-400 transition-all duration-150"
             >
               Fechar Sala
             </button>
           )}
-          <div className="flex items-center gap-2 text-sm text-slate-400">
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
             <span
-              className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-slate-600'}`}
+              className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
             />
-            <span>{onlineCount} online</span>
+            <span>{onlineCount}</span>
+          </div>
+          {/* Notification settings button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifSettings((v) => !v)}
+              className="text-zinc-500 hover:text-zinc-200 transition-colors text-sm leading-none p-1 rounded-lg hover:bg-surface-700"
+              title="Configurações de notificação"
+              aria-label="Notificações"
+            >
+              🔔
+            </button>
+            {showNotifSettings && (
+              <NotificationSettings onClose={() => setShowNotifSettings(false)} />
+            )}
           </div>
         </div>
       </header>
 
       {/* Share link banner — ephemeral rooms only */}
       {isEphemeral && (
-        <div className="shrink-0 bg-indigo-900/40 border-b border-indigo-800 px-4 py-2 flex items-center justify-between gap-3">
+        <div className="shrink-0 bg-brand-500/8 border-b border-brand-500/15 px-4 py-2 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-indigo-300 font-medium">Compartilhe o link para conversar</p>
-            <p className="text-xs text-slate-500 truncate">{typeof window !== 'undefined' ? window.location.href : ''}</p>
+            <p className="text-xs text-brand-400 font-medium">Compartilhe o link para conversar</p>
+            <p className="text-[11px] text-zinc-600 truncate">{typeof window !== 'undefined' ? window.location.href : ''}</p>
           </div>
           <button
             onClick={handleCopyLink}
-            className="shrink-0 rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+            className="shrink-0 rounded-lg bg-brand-500 hover:bg-brand-400 px-3 py-1.5 text-xs font-semibold text-white transition-all duration-150"
           >
             {copied ? '✓ Copiado' : 'Copiar'}
           </button>
@@ -245,16 +263,16 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* Owner participants panel — ephemeral rooms only */}
       {showAdminControls && roomParticipants.length > 0 && (
-        <div className="shrink-0 bg-slate-800/60 border-b border-slate-700 px-4 py-2">
-          <p className="text-xs text-slate-400 font-medium mb-1.5">Participantes</p>
+        <div className="shrink-0 bg-surface-800/60 border-b border-white/[0.06] px-4 py-2">
+          <p className="text-[11px] text-zinc-500 font-medium uppercase tracking-wide mb-1.5">Participantes</p>
           <div className="flex flex-wrap gap-2">
             {roomParticipants.map((participant) => (
-              <div key={participant} className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-300">{participant}</span>
+              <div key={participant} className="flex items-center gap-1.5 bg-surface-700 rounded-lg px-2 py-0.5">
+                <span className="text-xs text-zinc-300">{participant}</span>
                 {participant !== username && (
                   <button
                     onClick={() => handleKickUser(participant)}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors leading-none"
+                    className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors leading-none"
                     title={`Remover ${participant}`}
                   >
                     ✕
@@ -268,8 +286,8 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* TTL banner */}
       {messageTtlSeconds && (
-        <div className="shrink-0 bg-rose-900/20 border-b border-rose-800/40 px-4 py-1.5">
-          <p className="text-xs text-rose-400 text-center">
+        <div className="shrink-0 bg-rose-500/8 border-b border-rose-500/15 px-4 py-1.5">
+          <p className="text-[11px] text-rose-400 text-center">
             🔥 Mensagens se autodestroem em {formatTtl(messageTtlSeconds)}
           </p>
         </div>
@@ -277,20 +295,20 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* Ephemeral warning */}
       {isEphemeral && messages.length === 0 && (
-        <div className="shrink-0 bg-amber-900/20 border-b border-amber-800/40 px-4 py-2">
-          <p className="text-xs text-amber-400 text-center">
+        <div className="shrink-0 bg-amber-500/8 border-b border-amber-500/15 px-4 py-2">
+          <p className="text-xs text-amber-400/80 text-center">
             ⚠️ Sala efêmera — histórico apagado quando todos saírem
           </p>
         </div>
       )}
 
-      {/* Messages — touch scrolling, overscroll-contain prevents page bounce */}
+      {/* Messages */}
       <div
-        className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-2"
+        className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {messages.length === 0 && (
-          <p className="text-center text-slate-500 text-sm mt-8">
+          <p className="text-center text-zinc-600 text-sm mt-12">
             {isEphemeral
               ? 'Aguardando a outra pessoa entrar…'
               : 'Seja o primeiro a enviar uma mensagem!'}
@@ -309,7 +327,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* Typing indicator */}
       {typingUsers.length > 0 && (
-        <div className="shrink-0 px-4 py-1.5 text-xs text-slate-400 italic">
+        <div className="shrink-0 px-5 py-1.5 text-[11px] text-zinc-500 italic">
           {typingUsers.length === 1
             ? `${typingUsers[0]} está digitando`
             : typingUsers.length === 2
@@ -325,16 +343,16 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* Reply preview bar */}
       {replyingTo && (
-        <div className="shrink-0 bg-slate-800 border-t border-slate-700 px-4 py-2 flex items-center justify-between gap-3">
+        <div className="shrink-0 bg-surface-800 border-t border-white/[0.06] px-4 py-2 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs text-indigo-400 font-medium">↩ Respondendo a {replyingTo.username}</p>
-            <p className="text-xs text-slate-400 truncate">
+            <p className="text-[11px] text-brand-400 font-medium">↩ Respondendo a {replyingTo.username}</p>
+            <p className="text-xs text-zinc-500 truncate">
               {replyingTo.content.length > 80 ? replyingTo.content.slice(0, 80) + '…' : replyingTo.content}
             </p>
           </div>
           <button
             onClick={() => setReplyingTo(null)}
-            className="shrink-0 text-slate-400 hover:text-slate-200 text-lg leading-none"
+            className="shrink-0 text-zinc-500 hover:text-zinc-200 transition-colors text-base leading-none"
             aria-label="Cancelar resposta"
           >
             ✕
@@ -342,13 +360,12 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
         </div>
       )}
 
-      {/* Input — pb-safe for home bar on iOS/Android */}
-      <div className="border-t border-slate-700 p-4 shrink-0 pb-safe">
+      {/* Input area — pb-safe for home bar on iOS/Android */}
+      <div className="glass border-t border-white/[0.06] px-4 py-3 shrink-0 pb-safe">
         {imageError && (
           <p className="text-xs text-red-400 mb-2 text-center">{imageError}</p>
         )}
         <div className="flex gap-2 items-end">
-          {/* Hidden file input for images */}
           <input
             ref={fileInputRef}
             type="file"
@@ -360,12 +377,12 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
             type="button"
             onClick={() => { setImageError(''); fileInputRef.current?.click() }}
             disabled={!connected || sendingImage}
-            className="shrink-0 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 p-2 text-slate-300 transition-colors"
+            className="shrink-0 rounded-xl bg-surface-700 hover:bg-surface-600 border border-white/[0.06] disabled:opacity-40 p-2 text-zinc-400 hover:text-zinc-200 transition-all duration-150"
             title="Enviar imagem"
             aria-label="Enviar imagem"
           >
             {sendingImage ? (
-              <span className="block w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+              <span className="block w-5 h-5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -386,19 +403,19 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
             }}
             onKeyDown={handleKeyDown}
             rows={1}
-            placeholder="Mensagem… (Enter para enviar, Shift+Enter para nova linha)"
-            className="flex-1 resize-none rounded-lg bg-slate-800 border border-slate-600 px-4 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-32 overflow-y-auto"
+            placeholder="Mensagem…"
+            className="flex-1 resize-none rounded-xl bg-surface-800 border border-white/[0.07] px-4 py-2.5 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all duration-150 max-h-32 overflow-y-auto text-sm"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || !connected}
-            className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 font-semibold text-white transition-colors shrink-0"
+            className="rounded-xl bubble-own hover:opacity-90 disabled:opacity-30 px-4 py-2.5 font-semibold text-white transition-all duration-150 shrink-0 text-sm shadow-glow-sm"
           >
             Enviar
           </button>
         </div>
-        <p className="text-xs text-slate-600 mt-2 text-center">
-          🔒 Mensagens criptografadas E2E — o servidor não lê o conteúdo
+        <p className="text-[10px] text-zinc-700 mt-2 text-center">
+          🔒 E2E — o servidor não lê o conteúdo
         </p>
       </div>
     </div>

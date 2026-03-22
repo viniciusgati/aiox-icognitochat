@@ -4,6 +4,7 @@ export interface SessionData {
   userId?: number
   username?: string
   isLoggedIn: boolean
+  isAdmin?: boolean
   lastSeenAt?: number // timestamp ms — usado para verificar inatividade no middleware
 }
 

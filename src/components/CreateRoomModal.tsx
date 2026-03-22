@@ -72,19 +72,28 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-xl bg-slate-800 p-6 shadow-xl"
+        className="w-full max-w-sm rounded-2xl bg-surface-900 border border-white/[0.08] p-6 shadow-modal"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-4 text-lg font-semibold text-slate-100">Nova Sala</h2>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-semibold text-zinc-100">Nova Sala</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-600 hover:text-zinc-300 transition-colors text-lg leading-none p-1 rounded-lg hover:bg-surface-700"
+          >
+            ✕
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Ephemeral toggle */}
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <div className="relative">
+          <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl bg-surface-800 border border-white/[0.05] hover:border-white/[0.09] transition-colors">
+            <div className="relative shrink-0">
               <input
                 type="checkbox"
                 className="sr-only"
@@ -92,26 +101,26 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
                 onChange={(e) => setEphemeral(e.target.checked)}
               />
               <div
-                className={`w-10 h-6 rounded-full transition-colors ${
-                  ephemeral ? 'bg-indigo-600' : 'bg-slate-600'
+                className={`w-10 h-6 rounded-full transition-colors duration-150 ${
+                  ephemeral ? 'bg-brand-500' : 'bg-surface-600'
                 }`}
               />
               <div
-                className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-150 ${
                   ephemeral ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-200">Sala Rápida</p>
-              <p className="text-xs text-slate-500">Apagada quando todos saírem</p>
+              <p className="text-sm font-medium text-zinc-200">Sala Rápida</p>
+              <p className="text-xs text-zinc-600 mt-0.5">Apagada quando todos saírem</p>
             </div>
           </label>
 
-          {/* Name field — hidden for ephemeral rooms */}
+          {/* Name field */}
           {!ephemeral && (
             <div>
-              <label htmlFor="room-name" className="block text-sm font-medium text-slate-300 mb-1">
+              <label htmlFor="room-name" className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
                 Nome da Sala
               </label>
               <input
@@ -123,20 +132,22 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
                 maxLength={50}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-lg bg-slate-700 border border-slate-600 px-4 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Ex: Jogos, Música..."
+                className="w-full rounded-xl bg-surface-800 border border-white/[0.07] px-4 py-2.5 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all duration-150 text-sm"
+                placeholder="Ex: Jogos, Música…"
               />
             </div>
           )}
 
           {ephemeral && (
             <>
-              <p className="text-xs text-indigo-400 bg-indigo-900/30 rounded-lg px-3 py-2">
-                🔗 Um link será gerado para você compartilhar. A sala desaparece quando todos saírem.
-              </p>
+              <div className="rounded-xl bg-brand-500/8 border border-brand-500/20 px-3 py-2.5">
+                <p className="text-xs text-brand-400">
+                  🔗 Um link será gerado para você compartilhar. A sala desaparece quando todos saírem.
+                </p>
+              </div>
               <div>
-                <label htmlFor="max-participants" className="block text-sm font-medium text-slate-300 mb-1">
-                  Máx. participantes <span className="text-slate-500">(opcional, mín. 2)</span>
+                <label htmlFor="max-participants" className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
+                  Máx. participantes <span className="normal-case text-zinc-600">(opcional, mín. 2)</span>
                 </label>
                 <input
                   id="max-participants"
@@ -145,23 +156,23 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
                   max={20}
                   value={maxParticipants}
                   onChange={(e) => setMaxParticipants(e.target.value)}
-                  className="w-full rounded-lg bg-slate-700 border border-slate-600 px-4 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-xl bg-surface-800 border border-white/[0.07] px-4 py-2.5 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all duration-150 text-sm"
                   placeholder="Sem limite"
                 />
               </div>
             </>
           )}
 
-          {/* TTL selector — available for all room types */}
+          {/* TTL selector */}
           <div>
-            <label htmlFor="message-ttl" className="block text-sm font-medium text-slate-300 mb-1">
+            <label htmlFor="message-ttl" className="block text-xs font-medium text-zinc-500 uppercase tracking-wide mb-1.5">
               Auto-destruir mensagens
             </label>
             <select
               id="message-ttl"
               value={messageTtl}
               onChange={(e) => setMessageTtl(e.target.value)}
-              className="w-full rounded-lg bg-slate-700 border border-slate-600 px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-xl bg-surface-800 border border-white/[0.07] px-4 py-2.5 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all duration-150 text-sm"
             >
               {TTL_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -172,23 +183,23 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
           </div>
 
           {error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-red-400 bg-red-400/8 rounded-lg px-3 py-2">
               {error}
             </p>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-2 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-lg border border-slate-600 px-4 py-2 text-slate-300 hover:bg-slate-700 transition-colors"
+              className="flex-1 rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-surface-700 transition-all duration-150"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2 font-semibold text-white transition-colors"
+              className="flex-1 rounded-xl bubble-own hover:opacity-90 disabled:opacity-40 px-4 py-2.5 text-sm font-semibold text-white transition-all duration-150 shadow-glow-sm"
             >
               {loading ? 'Criando…' : ephemeral ? 'Criar Link' : 'Criar'}
             </button>

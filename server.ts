@@ -2,8 +2,24 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
-import { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages, deleteExpiredImages } from '@/lib/db'
+import bcrypt from 'bcryptjs'
+import db, { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages, deleteExpiredImages } from '@/lib/db'
 import logger from '@/lib/logger'
+
+// Bootstrap admin user from env vars (runs once on startup)
+const adminUsername = process.env.ADMIN_USERNAME
+const adminPassword = process.env.ADMIN_PASSWORD
+if (adminUsername && adminPassword) {
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(adminUsername) as { id: number } | undefined
+  if (!existing) {
+    const hash = bcrypt.hashSync(adminPassword, 10)
+    db.prepare('INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)').run(adminUsername, hash)
+    logger.info({ username: adminUsername }, 'Admin user created from env vars')
+  } else {
+    db.prepare('UPDATE users SET is_admin = 1 WHERE username = ?').run(adminUsername)
+    logger.info({ username: adminUsername }, 'Admin flag ensured for existing user')
+  }
+}
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'

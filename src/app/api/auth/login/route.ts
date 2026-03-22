@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
     }
 
     const user = db
-      .prepare('SELECT id, username, password_hash FROM users WHERE username = ?')
-      .get(username) as { id: number; username: string; password_hash: string } | undefined
+      .prepare('SELECT id, username, password_hash, is_admin FROM users WHERE username = ?')
+      .get(username) as { id: number; username: string; password_hash: string; is_admin: number } | undefined
 
     if (!user) {
       loginLimiter.recordFailure(ip)
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
     session.userId = user.id
     session.username = user.username
     session.isLoggedIn = true
+    session.isAdmin = user.is_admin === 1
     session.lastSeenAt = Date.now()
     await session.save()
 

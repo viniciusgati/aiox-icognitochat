@@ -2,7 +2,7 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
-import { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages } from '@/lib/db'
+import { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages, deleteExpiredImages } from '@/lib/db'
 import logger from '@/lib/logger'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -285,6 +285,16 @@ app.prepare().then(() => {
     setInterval(() => {
       const deleted = deleteExpiredMessages(ttlHours)
       logger.info({ deleted, ttlHours }, 'TTL cleanup')
+    }, 60 * 60 * 1000)
+  }
+
+  const imageTtlHours = parseInt(process.env.IMAGE_TTL_HOURS ?? '48', 10)
+  if (imageTtlHours > 0) {
+    const deletedOnStartup = deleteExpiredImages(imageTtlHours)
+    logger.info({ deleted: deletedOnStartup, imageTtlHours }, 'Image TTL cleanup on startup')
+    setInterval(() => {
+      const deleted = deleteExpiredImages(imageTtlHours)
+      logger.info({ deleted, imageTtlHours }, 'Image TTL cleanup')
     }, 60 * 60 * 1000)
   }
 

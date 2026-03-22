@@ -118,6 +118,26 @@ export function cleanOrphanedEphemeralRooms(): number {
   return result.changes
 }
 
+/** Delete image files older than ttlHours from disk and DB. Returns number deleted. */
+export function deleteExpiredImages(ttlHours: number): number {
+  const expired = db
+    .prepare('SELECT id FROM room_images WHERE created_at < unixepoch() - (? * 3600)')
+    .all(ttlHours) as { id: string }[]
+  let deleted = 0
+  for (const img of expired) {
+    try {
+      fs.unlinkSync(path.join(IMAGES_DIR, `${img.id}.bin`))
+      deleted++
+    } catch {
+      // File may already be gone — ignore
+    }
+  }
+  if (expired.length > 0) {
+    db.prepare('DELETE FROM room_images WHERE created_at < unixepoch() - (? * 3600)').run(ttlHours)
+  }
+  return deleted
+}
+
 /** Delete messages older than ttlHours. Returns number of deleted rows. */
 export function deleteExpiredMessages(ttlHours: number): number {
   const result = db

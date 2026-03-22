@@ -15,7 +15,7 @@ interface Props {
 
 export default function ChatWindow({ roomId, username, roomName, isEphemeral = false }: Props) {
   const router = useRouter()
-  const { messages, onlineCount, connected, sendMessage, cleanup, isOwner, roomParticipants, kickUser, closeRoom } = useSocket(
+  const { messages, onlineCount, connected, sendMessage, cleanup, isOwner, roomParticipants, kickUser, closeRoom, typingUsers, sendTypingStart, sendTypingStop } = useSocket(
     roomId,
     username,
     isEphemeral,
@@ -79,6 +79,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   async function handleSend() {
     const text = input.trim()
     if (!text || !connected) return
+    sendTypingStop()
     setInput('')
     await sendMessage(text)
   }
@@ -191,12 +192,35 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
         <div ref={bottomRef} />
       </div>
 
+      {/* Typing indicator */}
+      {typingUsers.length > 0 && (
+        <div className="shrink-0 px-4 py-1.5 text-xs text-slate-400 italic">
+          {typingUsers.length === 1
+            ? `${typingUsers[0]} está digitando`
+            : typingUsers.length === 2
+              ? `${typingUsers[0]} e ${typingUsers[1]} estão digitando`
+              : `${typingUsers[0]}, ${typingUsers[1]} e outros estão digitando`}
+          <span className="inline-flex gap-0.5 ml-1">
+            <span className="animate-bounce [animation-delay:0ms]">.</span>
+            <span className="animate-bounce [animation-delay:150ms]">.</span>
+            <span className="animate-bounce [animation-delay:300ms]">.</span>
+          </span>
+        </div>
+      )}
+
       {/* Input — pb-safe for home bar on iOS/Android */}
       <div className="border-t border-slate-700 p-4 shrink-0 pb-safe">
         <div className="flex gap-2 items-end">
           <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              if (e.target.value) {
+                sendTypingStart()
+              } else {
+                sendTypingStop()
+              }
+            }}
             onKeyDown={handleKeyDown}
             rows={1}
             placeholder="Mensagem… (Enter para enviar, Shift+Enter para nova linha)"

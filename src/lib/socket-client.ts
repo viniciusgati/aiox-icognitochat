@@ -32,6 +32,12 @@ export function useSocket(
   const [connected, setConnected] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [roomParticipants, setRoomParticipants] = useState<string[]>([])
+  const [typingUsers, setTypingUsers] = useState<string[]>([])
+  // Per-user 3s safety timeout map
+  const typingTimeouts = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // Debounce ref for auto-stop after 1s of inactivity
+  const typingDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isTypingRef = useRef(false)
 
   // Keep callback refs up to date without re-running the main effect
   useEffect(() => { onKickedRef.current = onKicked }, [onKicked])
@@ -40,6 +46,8 @@ export function useSocket(
 
   useEffect(() => {
     let socket: Socket
+    // Capture ref value for cleanup (react-hooks/exhaustive-deps)
+    const timeouts = typingTimeouts.current
 
     async function init() {
       keyRef.current = await deriveRoomKey(roomId)
@@ -75,6 +83,29 @@ export function useSocket(
       socket.on('force-logout', async () => {
         await fetch('/api/auth/logout', { method: 'POST' })
         window.location.href = '/'
+      })
+
+      socket.on('user-typing', ({ username: typingUsername }: { username: string }) => {
+        setTypingUsers((prev) =>
+          prev.includes(typingUsername) ? prev : [...prev, typingUsername]
+        )
+        // Reset 3s safety timeout for this user
+        const existing = typingTimeouts.current.get(typingUsername)
+        if (existing) clearTimeout(existing)
+        typingTimeouts.current.set(
+          typingUsername,
+          setTimeout(() => {
+            setTypingUsers((prev) => prev.filter((u) => u !== typingUsername))
+            typingTimeouts.current.delete(typingUsername)
+          }, 3000)
+        )
+      })
+
+      socket.on('user-stopped-typing', ({ username: typingUsername }: { username: string }) => {
+        const existing = typingTimeouts.current.get(typingUsername)
+        if (existing) clearTimeout(existing)
+        typingTimeouts.current.delete(typingUsername)
+        setTypingUsers((prev) => prev.filter((u) => u !== typingUsername))
       })
 
       socket.on(
@@ -118,6 +149,9 @@ export function useSocket(
     init()
 
     return () => {
+      if (typingDebounce.current) clearTimeout(typingDebounce.current)
+      timeouts.forEach((t) => clearTimeout(t))
+      timeouts.clear()
       socket?.emit('leave-room', roomId)
       socket?.disconnect()
     }
@@ -159,6 +193,28 @@ export function useSocket(
     [roomId, username]
   )
 
+  const sendTypingStart = useCallback(() => {
+    if (!socketRef.current) return
+    if (!isTypingRef.current) {
+      isTypingRef.current = true
+      socketRef.current.emit('typing-start', { roomId, username })
+    }
+    // Debounce: schedule auto-stop after 1s of inactivity
+    if (typingDebounce.current) clearTimeout(typingDebounce.current)
+    typingDebounce.current = setTimeout(() => {
+      isTypingRef.current = false
+      socketRef.current?.emit('typing-stop', { roomId, username })
+    }, 1000)
+  }, [roomId, username])
+
+  const sendTypingStop = useCallback(() => {
+    if (typingDebounce.current) clearTimeout(typingDebounce.current)
+    if (isTypingRef.current) {
+      isTypingRef.current = false
+      socketRef.current?.emit('typing-stop', { roomId, username })
+    }
+  }, [roomId, username])
+
   const kickUser = useCallback(
     (targetUsername: string) => {
       socketRef.current?.emit('kick-user', { roomId, targetUsername })
@@ -180,5 +236,8 @@ export function useSocket(
     roomParticipants,
     kickUser,
     closeRoom,
+    typingUsers,
+    sendTypingStart,
+    sendTypingStop,
   }
 }

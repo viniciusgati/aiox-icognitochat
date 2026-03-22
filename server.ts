@@ -3,7 +3,7 @@ import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
 import { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages } from '@/lib/db'
-
+import logger from '@/lib/logger'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -13,7 +13,7 @@ const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()
 
 function gracefulShutdown(signal: string) {
-  if (dev) console.log(`[Server] Received ${signal}, shutting down...`)
+  logger.info({ signal }, 'Server shutting down')
   process.exit(0)
 }
 
@@ -52,7 +52,7 @@ app.prepare().then(() => {
       ephemeralRooms.delete(roomId)
       roomUsers.delete(roomId)
       roomOwners.delete(roomId)
-      if (dev) console.log(`[Socket.io] Ephemeral room deleted: ${roomId}`)
+      logger.debug({ roomId }, 'Ephemeral room deleted')
     }
   }
 
@@ -63,12 +63,12 @@ app.prepare().then(() => {
     if (nextSocketId) {
       roomOwners.set(roomId, nextSocketId)
       io.to(nextSocketId).emit('room-owner', true)
-      if (dev) console.log(`[Socket.io] New owner promoted in room: ${roomId}`)
+      logger.debug({ roomId, nextSocketId }, 'New owner promoted')
     }
   }
 
   io.on('connection', (socket) => {
-    if (dev) console.log(`[Socket.io] Client connected: ${socket.id}`)
+    logger.debug({ socketId: socket.id }, 'Client connected')
 
     socket.on(
       'join-room',
@@ -92,16 +92,13 @@ app.prepare().then(() => {
         if (ephemeral && !roomOwners.has(roomId)) {
           roomOwners.set(roomId, socket.id)
           socket.emit('room-owner', true)
-          if (dev) console.log(`[Socket.io] Owner set for room: ${roomId} → ${socket.id}`)
+          logger.debug({ roomId, socketId: socket.id }, 'Owner set for ephemeral room')
         }
 
         const count = roomUsers.get(roomId)!.size
         io.to(roomId).emit('room-users', count)
         io.to(roomId).emit('room-users-list', Array.from(roomUsers.get(roomId)!.values()))
-        if (dev)
-          console.log(
-            `[Socket.io] ${username} joined room: ${roomId} (ephemeral: ${!!ephemeral}) — ${count} online`
-          )
+        logger.debug({ username, roomId, ephemeral: !!ephemeral, count }, 'User joined room')
       }
     )
 
@@ -130,7 +127,7 @@ app.prepare().then(() => {
           const count = users?.size ?? 0
           io.to(roomId).emit('room-users', count)
           io.to(roomId).emit('room-users-list', Array.from(users?.values() ?? []))
-          if (dev) console.log(`[Socket.io] ${targetUsername} kicked from room: ${roomId}`)
+          logger.info({ roomId, targetUsername }, 'User kicked from room')
         }
       }
     )
@@ -142,8 +139,22 @@ app.prepare().then(() => {
       roomOwners.delete(roomId)
       roomUsers.delete(roomId)
       ephemeralRooms.delete(roomId)
-      if (dev) console.log(`[Socket.io] Ephemeral room closed by owner: ${roomId}`)
+      logger.info({ roomId }, 'Ephemeral room closed by owner')
     })
+
+    socket.on(
+      'typing-start',
+      ({ roomId, username }: { roomId: string; username: string }) => {
+        socket.to(roomId).emit('user-typing', { username })
+      }
+    )
+
+    socket.on(
+      'typing-stop',
+      ({ roomId, username }: { roomId: string; username: string }) => {
+        socket.to(roomId).emit('user-stopped-typing', { username })
+      }
+    )
 
     socket.on(
       'send-message',
@@ -180,24 +191,24 @@ app.prepare().then(() => {
         socketIds.delete(socket.id)
         if (socketIds.size === 0) userSockets.delete(username)
       })
-      if (dev) console.log(`[Socket.io] Client disconnected: ${socket.id}`)
+      logger.debug({ socketId: socket.id }, 'Client disconnected')
     })
   })
 
   const cleaned = cleanOrphanedEphemeralRooms()
-  console.log(`[Server] Cleaned ${cleaned} orphaned ephemeral rooms`)
+  logger.info({ cleaned }, 'Cleaned orphaned ephemeral rooms')
 
   const ttlHours = parseInt(process.env.MESSAGE_TTL_HOURS ?? '24', 10)
   if (ttlHours > 0) {
     const deletedOnStartup = deleteExpiredMessages(ttlHours)
-    console.log(`[Server] TTL cleanup: deleted ${deletedOnStartup} messages older than ${ttlHours}h`)
+    logger.info({ deleted: deletedOnStartup, ttlHours }, 'TTL cleanup on startup')
     setInterval(() => {
       const deleted = deleteExpiredMessages(ttlHours)
-      console.log(`[Server] TTL cleanup: deleted ${deleted} messages older than ${ttlHours}h`)
+      logger.info({ deleted, ttlHours }, 'TTL cleanup')
     }, 60 * 60 * 1000)
   }
 
   httpServer.listen(port, () => {
-    console.log(`> Ready on http://${hostname}:${port}`)
+    logger.info({ hostname, port }, 'Server ready')
   })
 })

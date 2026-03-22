@@ -197,9 +197,9 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const showAdminControls = isOwner && isEphemeral
 
   return (
-    <div className="flex flex-col h-dvh bg-surface-950 text-zinc-100 overscroll-none">
+    <div className="fixed inset-0 flex flex-col bg-surface-950 text-zinc-100 overflow-hidden">
       {/* Header — glass effect, pt-safe for notch */}
-      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0 pt-safe sticky top-0 z-10">
+      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0 pt-safe">
         <div className="flex items-center gap-3">
           <Link
             href="/chat"

@@ -37,7 +37,7 @@ function RoomSkeleton() {
   )
 }
 
-export default function RoomList({ username }: { username: string }) {
+export default function RoomList({ username, isAdmin = false }: { username: string; isAdmin?: boolean }) {
   const router = useRouter()
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,6 +83,14 @@ export default function RoomList({ username }: { username: string }) {
             <UserAvatar username={username} />
             <span className="text-xs text-zinc-400 font-medium">{username}</span>
           </div>
+          {isAdmin && (
+            <a
+              href="/admin"
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-900/30 font-medium"
+            >
+              ⚙️ Admin
+            </a>
+          )}
           <button
             onClick={handleLogout}
             className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors px-2 py-1 rounded-lg hover:bg-surface-700"

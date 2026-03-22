@@ -10,6 +10,8 @@ import NotificationSettings from './NotificationSettings'
 import { getPrefs, playSound } from '@/lib/notification-prefs'
 import { usePushSubscription } from '@/lib/use-push-subscription'
 import { useScreenCaptureDetection } from '@/lib/use-screen-capture-detection'
+import PrivacyPanel from './PrivacyPanel'
+import { getPrivacyPrefs, getEffectiveTtlSeconds, LocalTtlOption } from '@/lib/privacy-prefs'
 
 interface Props {
   roomId: string
@@ -30,6 +32,9 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const router = useRouter()
   const [screenShareBanner, setScreenShareBanner] = useState<number | null>(null) // countdown seconds
   const [screenShareKickNotice, setScreenShareKickNotice] = useState<string | null>(null)
+  const [localTtl, setLocalTtl] = useState<LocalTtlOption>(() => getPrivacyPrefs().localTtl)
+
+  const effectiveTtlSeconds = getEffectiveTtlSeconds(localTtl, messageTtlSeconds)
 
   const {
     messages,
@@ -69,7 +74,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       router.push('/chat')
     }, [router]),
     maxParticipants,
-    messageTtlSeconds,
+    effectiveTtlSeconds ?? undefined,
     useCallback((kickedUsername: string) => {
       setScreenShareKickNotice(`${kickedUsername} foi removido por compartilhamento de tela.`)
       setTimeout(() => setScreenShareKickNotice(null), 5000)
@@ -85,6 +90,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const [imageError, setImageError] = useState('')
   const [sendingImage, setSendingImage] = useState(false)
   const [showNotifSettings, setShowNotifSettings] = useState(false)
+  const [showPrivacyPanel, setShowPrivacyPanel] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   // Tab badge: unread count when tab is hidden
@@ -313,14 +319,24 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
               />
             )}
           </div>
-          {/* Screen protection indicator */}
-          <div
-            title="Protege contra compartilhamento via browser. Não detecta gravadores nativos do OS."
-            className="text-zinc-600 hover:text-zinc-400 transition-colors cursor-help p-1"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-            </svg>
+          {/* Privacy panel button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowPrivacyPanel((v) => !v)}
+              className={`transition-colors p-1 rounded-lg text-sm leading-none ${showPrivacyPanel ? 'text-brand-400 bg-brand-500/10' : 'text-zinc-500 hover:text-zinc-200 hover:bg-surface-700'}`}
+              title="Configurações de privacidade"
+              aria-label="Privacidade"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+              </svg>
+            </button>
+            {showPrivacyPanel && (
+              <PrivacyPanel
+                onClose={() => setShowPrivacyPanel(false)}
+                onTtlChange={(ttl) => setLocalTtl(ttl)}
+              />
+            )}
           </div>
         </div>
       </header>
@@ -364,11 +380,12 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
         </div>
       )}
 
-      {/* TTL banner */}
-      {messageTtlSeconds && (
+      {/* TTL banner — shows effective (most restrictive) TTL */}
+      {effectiveTtlSeconds !== null && (
         <div className="shrink-0 bg-rose-500/8 border-b border-rose-500/15 px-4 py-1.5">
           <p className="text-[11px] text-rose-400 text-center">
-            🔥 Mensagens se autodestroem em {formatTtl(messageTtlSeconds)}
+            🔥 Mensagens se autodestroem em {formatTtl(effectiveTtlSeconds)}
+            {effectiveTtlSeconds !== (messageTtlSeconds ?? null) && ' (local)'}
           </p>
         </div>
       )}

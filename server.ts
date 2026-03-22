@@ -295,7 +295,7 @@ app.prepare().then(() => {
     setInterval(() => {
       const deleted = deleteExpiredImages(imageTtlHours)
       logger.info({ deleted, imageTtlHours }, 'Image TTL cleanup')
-    }, 60 * 60 * 1000)
+    }, 3 * 60 * 60 * 1000)
   }
 
   httpServer.listen(port, () => {

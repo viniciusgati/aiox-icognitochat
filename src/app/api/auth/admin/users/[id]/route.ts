@@ -23,6 +23,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
   }
 
+  db.prepare('DELETE FROM messages WHERE user_id = ?').run(id)
   db.prepare('DELETE FROM users WHERE id = ?').run(id)
 
   // Desconectar via Socket.io se o usuário estiver online

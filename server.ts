@@ -45,6 +45,10 @@ app.prepare().then(() => {
   const ephemeralRooms = new Set<string>()
   // Owner tracking for ephemeral rooms: roomId → socketId
   const roomOwners = new Map<string, string>()
+  // Reactions: msgId → emoji → Set<socketId> (in-memory, ephemeral)
+  const messageReactions = new Map<string, Map<string, Set<string>>>()
+  // Max participants per room: roomId → maxParticipants
+  const roomMaxParticipants = new Map<string, number>()
 
   function handleRoomEmpty(roomId: string) {
     if (ephemeralRooms.has(roomId)) {
@@ -52,6 +56,7 @@ app.prepare().then(() => {
       ephemeralRooms.delete(roomId)
       roomUsers.delete(roomId)
       roomOwners.delete(roomId)
+      roomMaxParticipants.delete(roomId)
       logger.debug({ roomId }, 'Ephemeral room deleted')
     }
   }
@@ -76,11 +81,28 @@ app.prepare().then(() => {
         roomId,
         username,
         ephemeral,
+        maxParticipants,
       }: {
         roomId: string
         username: string
         ephemeral?: boolean
+        maxParticipants?: number
       }) => {
+        // Store max participants when first set (by creator)
+        if (maxParticipants && maxParticipants >= 2 && !roomMaxParticipants.has(roomId)) {
+          roomMaxParticipants.set(roomId, maxParticipants)
+        }
+
+        // Enforce participant limit (owner/creator always allowed)
+        const currentCount = roomUsers.get(roomId)?.size ?? 0
+        const max = roomMaxParticipants.get(roomId)
+        const isOwnerJoining = !roomOwners.has(roomId) // first to join = future owner
+        if (max && currentCount >= max && !isOwnerJoining) {
+          socket.emit('join-denied')
+          logger.info({ roomId, username, max, currentCount }, 'Join denied: room full')
+          return
+        }
+
         socket.join(roomId)
         if (!roomUsers.has(roomId)) roomUsers.set(roomId, new Map())
         roomUsers.get(roomId)!.set(socket.id, username)
@@ -139,6 +161,7 @@ app.prepare().then(() => {
       roomOwners.delete(roomId)
       roomUsers.delete(roomId)
       ephemeralRooms.delete(roomId)
+      roomMaxParticipants.delete(roomId)
       logger.info({ roomId }, 'Ephemeral room closed by owner')
     })
 
@@ -164,6 +187,8 @@ app.prepare().then(() => {
         iv: string
         username: string
         timestamp: number
+        msgId: string
+        replyTo?: { id: string; username: string; content: string }
       }) => {
         // Relay encrypted payload — server never reads plaintext
         socket.to(data.roomId).emit('receive-message', {
@@ -171,7 +196,36 @@ app.prepare().then(() => {
           iv: data.iv,
           username: data.username,
           timestamp: data.timestamp,
+          msgId: data.msgId,
+          replyTo: data.replyTo,
         })
+      }
+    )
+
+    socket.on(
+      'react-to-message',
+      ({ roomId, messageId, emoji }: { roomId: string; messageId: string; emoji: string }) => {
+        const ALLOWED_EMOJIS = new Set(['👍', '❤️', '😂', '😮', '🔥', '👏'])
+        if (!ALLOWED_EMOJIS.has(emoji)) return
+
+        if (!messageReactions.has(messageId)) {
+          messageReactions.set(messageId, new Map())
+        }
+        const emojiMap = messageReactions.get(messageId)!
+        if (!emojiMap.has(emoji)) emojiMap.set(emoji, new Set())
+        const reactors = emojiMap.get(emoji)!
+
+        // Toggle: second click removes reaction
+        if (reactors.has(socket.id)) {
+          reactors.delete(socket.id)
+        } else {
+          reactors.add(socket.id)
+        }
+
+        // Build counts object and broadcast
+        const counts: Record<string, number> = {}
+        emojiMap.forEach((set, e) => { if (set.size > 0) counts[e] = set.size })
+        io.to(roomId).emit('reaction-updated', { messageId, counts })
       }
     )
 

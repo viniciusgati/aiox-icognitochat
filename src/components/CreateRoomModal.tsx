@@ -12,12 +12,13 @@ interface Room {
 
 interface Props {
   onClose: () => void
-  onCreated: (room: Room) => void
+  onCreated: (room: Room, maxParticipants?: number) => void
 }
 
 export default function CreateRoomModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState('')
   const [ephemeral, setEphemeral] = useState(false)
+  const [maxParticipants, setMaxParticipants] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -49,7 +50,8 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
         return
       }
 
-      onCreated(data.room)
+      const max = maxParticipants ? parseInt(maxParticipants, 10) : undefined
+      onCreated(data.room, max && !isNaN(max) && max >= 2 ? max : undefined)
     } catch {
       setError('Erro de conexão. Tente novamente.')
     } finally {
@@ -117,9 +119,26 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
           )}
 
           {ephemeral && (
-            <p className="text-xs text-indigo-400 bg-indigo-900/30 rounded-lg px-3 py-2">
-              🔗 Um link será gerado para você compartilhar. A sala desaparece quando todos saírem.
-            </p>
+            <>
+              <p className="text-xs text-indigo-400 bg-indigo-900/30 rounded-lg px-3 py-2">
+                🔗 Um link será gerado para você compartilhar. A sala desaparece quando todos saírem.
+              </p>
+              <div>
+                <label htmlFor="max-participants" className="block text-sm font-medium text-slate-300 mb-1">
+                  Máx. participantes <span className="text-slate-500">(opcional, mín. 2)</span>
+                </label>
+                <input
+                  id="max-participants"
+                  type="number"
+                  min={2}
+                  max={20}
+                  value={maxParticipants}
+                  onChange={(e) => setMaxParticipants(e.target.value)}
+                  className="w-full rounded-lg bg-slate-700 border border-slate-600 px-4 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Sem limite"
+                />
+              </div>
+            </>
           )}
 
           {error && (

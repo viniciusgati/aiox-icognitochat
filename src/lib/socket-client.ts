@@ -5,12 +5,20 @@ import { io, Socket } from 'socket.io-client'
 import { deriveRoomKey, encryptMessage, decryptMessage } from './crypto'
 import { clearCryptoKey, zeroizeMessages } from './secure-cleanup'
 
+export interface ReplyTo {
+  id: string
+  username: string
+  content: string
+}
+
 export interface Message {
   id: string
   username: string
   content: string
   timestamp: number
   own: boolean
+  replyTo?: ReplyTo
+  reactions?: Record<string, number>
 }
 
 export function useSocket(
@@ -20,7 +28,9 @@ export function useSocket(
   onKicked?: () => void,
   onRoomClosed?: () => void,
   onForceLogout?: () => void,
-  onServerDestroyed?: () => void
+  onServerDestroyed?: () => void,
+  onJoinDenied?: () => void,
+  maxParticipants?: number
 ) {
   const socketRef = useRef<Socket | null>(null)
   const keyRef = useRef<CryptoKey | null>(null)
@@ -29,6 +39,7 @@ export function useSocket(
   const onRoomClosedRef = useRef(onRoomClosed)
   const onForceLogoutRef = useRef(onForceLogout)
   const onServerDestroyedRef = useRef(onServerDestroyed)
+  const onJoinDeniedRef = useRef(onJoinDenied)
   const [messages, setMessages] = useState<Message[]>([])
   const [onlineCount, setOnlineCount] = useState(0)
   const [connected, setConnected] = useState(false)
@@ -46,6 +57,7 @@ export function useSocket(
   useEffect(() => { onRoomClosedRef.current = onRoomClosed }, [onRoomClosed])
   useEffect(() => { onForceLogoutRef.current = onForceLogout }, [onForceLogout])
   useEffect(() => { onServerDestroyedRef.current = onServerDestroyed }, [onServerDestroyed])
+  useEffect(() => { onJoinDeniedRef.current = onJoinDenied }, [onJoinDenied])
 
   useEffect(() => {
     let socket: Socket
@@ -60,7 +72,7 @@ export function useSocket(
 
       socket.on('connect', () => {
         setConnected(true)
-        socket.emit('join-room', { roomId, username, ephemeral })
+        socket.emit('join-room', { roomId, username, ephemeral, maxParticipants })
       })
 
       socket.on('room-users', (count: number) => {
@@ -90,6 +102,10 @@ export function useSocket(
 
       socket.on('server-destroyed', () => {
         onServerDestroyedRef.current?.()
+      })
+
+      socket.on('join-denied', () => {
+        onJoinDeniedRef.current?.()
       })
 
       socket.on('user-typing', ({ username: typingUsername }: { username: string }) => {
@@ -122,6 +138,8 @@ export function useSocket(
           iv: string
           username: string
           timestamp: number
+          msgId: string
+          replyTo?: ReplyTo
         }) => {
           if (!keyRef.current) return
           try {
@@ -131,11 +149,12 @@ export function useSocket(
               data.iv
             )
             const newMsg: Message = {
-              id: `${data.timestamp}-${data.username}-${Math.random()}`,
+              id: data.msgId,
               username: data.username,
               content,
               timestamp: data.timestamp,
               own: false,
+              replyTo: data.replyTo,
             }
             setMessages((prev) => {
               const next = [...prev, newMsg]
@@ -145,6 +164,15 @@ export function useSocket(
           } catch {
             // Silently ignore decrypt errors (wrong room key / corrupted data)
           }
+        }
+      )
+
+      socket.on(
+        'reaction-updated',
+        ({ messageId, counts }: { messageId: string; counts: Record<string, number> }) => {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === messageId ? { ...m, reactions: counts } : m))
+          )
         }
       )
 
@@ -162,7 +190,7 @@ export function useSocket(
       socket?.emit('leave-room', roomId)
       socket?.disconnect()
     }
-  }, [roomId, username, ephemeral])
+  }, [roomId, username, ephemeral, maxParticipants])
 
   /** Zeroize sensitive data from memory (best-effort). */
   const cleanup = useCallback(() => {
@@ -173,23 +201,27 @@ export function useSocket(
   }, [])
 
   const sendMessage = useCallback(
-    async (plaintext: string) => {
+    async (plaintext: string, replyTo?: ReplyTo) => {
       if (!socketRef.current || !keyRef.current) return
       const { ciphertext, iv } = await encryptMessage(keyRef.current, plaintext)
       const timestamp = Date.now()
+      const msgId = `${timestamp}-${username}-${Math.random().toString(36).slice(2)}`
       socketRef.current.emit('send-message', {
         roomId,
         ciphertext,
         iv,
         username,
         timestamp,
+        msgId,
+        replyTo,
       })
       const ownMsg: Message = {
-        id: `${timestamp}-own`,
+        id: msgId,
         username,
         content: plaintext,
         timestamp,
         own: true,
+        replyTo,
       }
       setMessages((prev) => {
         const next = [...prev, ownMsg]
@@ -222,6 +254,13 @@ export function useSocket(
     }
   }, [roomId, username])
 
+  const sendReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      socketRef.current?.emit('react-to-message', { roomId, messageId, emoji })
+    },
+    [roomId]
+  )
+
   const kickUser = useCallback(
     (targetUsername: string) => {
       socketRef.current?.emit('kick-user', { roomId, targetUsername })
@@ -238,6 +277,7 @@ export function useSocket(
     onlineCount,
     connected,
     sendMessage,
+    sendReaction,
     cleanup,
     isOwner,
     roomParticipants,

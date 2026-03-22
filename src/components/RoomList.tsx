@@ -39,10 +39,11 @@ export default function RoomList({ username }: { username: string }) {
     router.push('/')
   }
 
-  function handleRoomCreated(room: Room) {
+  function handleRoomCreated(room: Room, maxParticipants?: number) {
     setRooms((prev) => [...prev, room])
     setShowModal(false)
-    router.push(`/chat/${room.slug}`)
+    const url = maxParticipants ? `/chat/${room.slug}?max=${maxParticipants}` : `/chat/${room.slug}`
+    router.push(url)
   }
 
   return (

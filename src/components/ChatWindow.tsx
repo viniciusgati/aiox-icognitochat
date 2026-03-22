@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, KeyboardEvent, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSocket } from '@/lib/socket-client'
+import type { Message, ReplyTo } from '@/lib/socket-client'
 import MessageBubble from './MessageBubble'
 
 interface Props {
@@ -11,11 +12,26 @@ interface Props {
   username: string
   roomName: string
   isEphemeral?: boolean
+  maxParticipants?: number
 }
 
-export default function ChatWindow({ roomId, username, roomName, isEphemeral = false }: Props) {
+export default function ChatWindow({ roomId, username, roomName, isEphemeral = false, maxParticipants }: Props) {
   const router = useRouter()
-  const { messages, onlineCount, connected, sendMessage, cleanup, isOwner, roomParticipants, kickUser, closeRoom, typingUsers, sendTypingStart, sendTypingStop } = useSocket(
+  const {
+    messages,
+    onlineCount,
+    connected,
+    sendMessage,
+    sendReaction,
+    cleanup,
+    isOwner,
+    roomParticipants,
+    kickUser,
+    closeRoom,
+    typingUsers,
+    sendTypingStart,
+    sendTypingStop,
+  } = useSocket(
     roomId,
     username,
     isEphemeral,
@@ -31,16 +47,52 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     useCallback(() => {
       alert('O servidor foi encerrado pelo administrador')
       router.push('/')
-    }, [router])
+    }, [router]),
+    useCallback(() => {
+      alert('Sala lotada — limite de participantes atingido')
+      router.push('/chat')
+    }, [router]),
+    maxParticipants
   )
+
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)
+  const [replyingTo, setReplyingTo] = useState<ReplyTo | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Tab badge: unread count when tab is hidden
+  const unreadRef = useRef(0)
+  const originalTitleRef = useRef<string>('')
 
   // Auto-scroll to latest message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Tab badge: track unread messages when hidden
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1]
+    if (!lastMsg || lastMsg.own) return
+    if (document.hidden) {
+      unreadRef.current += 1
+      document.title = `(${unreadRef.current}) IcognitoChat`
+    }
+  }, [messages])
+
+  // Reset badge on focus
+  useEffect(() => {
+    originalTitleRef.current = document.title.replace(/^\(\d+\)\s*/, '')
+    const reset = () => {
+      unreadRef.current = 0
+      document.title = originalTitleRef.current || 'IcognitoChat'
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) reset()
+    })
+    window.addEventListener('focus', reset)
+    return () => {
+      window.removeEventListener('focus', reset)
+    }
+  }, [])
 
   // Secure cleanup: zeroize key + messages on tab/browser close and on unmount
   useEffect(() => {
@@ -74,10 +126,24 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     }
   }, [closeRoom])
 
+  const handleReply = useCallback((msg: Message) => {
+    setReplyingTo({ id: msg.id, username: msg.username, content: msg.content })
+  }, [])
+
+  const handleReact = useCallback(
+    (messageId: string, emoji: string) => {
+      sendReaction(messageId, emoji)
+    },
+    [sendReaction]
+  )
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    }
+    if (e.key === 'Escape') {
+      setReplyingTo(null)
     }
   }
 
@@ -86,7 +152,8 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     if (!text || !connected) return
     sendTypingStop()
     setInput('')
-    await sendMessage(text)
+    await sendMessage(text, replyingTo ?? undefined)
+    setReplyingTo(null)
   }
 
   const displayName = isEphemeral ? 'Sala Rápida' : roomName
@@ -192,7 +259,12 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
           </p>
         )}
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            onReply={handleReply}
+            onReact={handleReact}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -210,6 +282,25 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
             <span className="animate-bounce [animation-delay:150ms]">.</span>
             <span className="animate-bounce [animation-delay:300ms]">.</span>
           </span>
+        </div>
+      )}
+
+      {/* Reply preview bar */}
+      {replyingTo && (
+        <div className="shrink-0 bg-slate-800 border-t border-slate-700 px-4 py-2 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-indigo-400 font-medium">↩ Respondendo a {replyingTo.username}</p>
+            <p className="text-xs text-slate-400 truncate">
+              {replyingTo.content.length > 80 ? replyingTo.content.slice(0, 80) + '…' : replyingTo.content}
+            </p>
+          </div>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="shrink-0 text-slate-400 hover:text-slate-200 text-lg leading-none"
+            aria-label="Cancelar resposta"
+          >
+            ✕
+          </button>
         </div>
       )}
 

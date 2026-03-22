@@ -7,9 +7,10 @@ import ChatWindow from '@/components/ChatWindow'
 
 interface Props {
   params: Promise<{ roomId: string }>
+  searchParams: Promise<{ max?: string }>
 }
 
-export default async function RoomPage({ params }: Props) {
+export default async function RoomPage({ params, searchParams }: Props) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions)
 
   if (!session.isLoggedIn || !session.username) {
@@ -17,6 +18,8 @@ export default async function RoomPage({ params }: Props) {
   }
 
   const { roomId } = await params
+  const { max } = await searchParams
+  const maxParticipants = max ? parseInt(max, 10) : undefined
 
   const room = db
     .prepare('SELECT name, is_ephemeral FROM rooms WHERE slug = ?')
@@ -32,6 +35,7 @@ export default async function RoomPage({ params }: Props) {
       username={session.username}
       roomName={room.name}
       isEphemeral={room.is_ephemeral === 1}
+      maxParticipants={maxParticipants}
     />
   )
 }

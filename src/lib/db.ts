@@ -2,12 +2,12 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
+const DB_PATH = process.env.DB_PATH ?? path.join(process.cwd(), 'data', 'icognitochat.db')
+const DATA_DIR = path.dirname(DB_PATH)
+
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
 }
-
-const DB_PATH = path.join(DATA_DIR, 'icognitochat.db')
 
 const db = new Database(DB_PATH)
 
@@ -76,9 +76,18 @@ export function deleteRoom(slug: string): void {
 
 /**
  * Overwrite the SQLite database file with zeros and delete it.
- * Called on server SIGTERM/SIGINT for privacy-conscious shutdown.
+ *
+ * ⚠️  DESTRUIÇÃO PERMANENTE: apaga todos os usuários, salas e dados do banco.
+ * Se DB_PATH apontar para um Railway Volume, os dados persistentes serão
+ * irrecuperáveis. NÃO chamar em produção sem intenção explícita.
+ *
+ * Bloqueado em NODE_ENV=production como salvaguarda.
  */
 export function zeroizeDb(): void {
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[zeroizeDb] Chamada bloqueada em produção — operação cancelada.')
+    return
+  }
   try {
     db.close()
     const size = fs.statSync(DB_PATH).size

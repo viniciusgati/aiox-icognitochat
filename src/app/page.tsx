@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import LoginForm from '@/components/LoginForm'
 
 export default function Home() {
@@ -8,7 +9,9 @@ export default function Home() {
         <p className="mt-2 text-slate-400">Chat anônimo e privado</p>
       </div>
 
-      <LoginForm />
+      <Suspense>
+        <LoginForm />
+      </Suspense>
     </main>
   )
 }

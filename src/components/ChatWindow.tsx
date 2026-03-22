@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState, KeyboardEvent, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useSocket } from '@/lib/socket-client'
 import MessageBubble from './MessageBubble'
 
@@ -13,10 +14,19 @@ interface Props {
 }
 
 export default function ChatWindow({ roomId, username, roomName, isEphemeral = false }: Props) {
-  const { messages, onlineCount, connected, sendMessage, cleanup } = useSocket(
+  const router = useRouter()
+  const { messages, onlineCount, connected, sendMessage, cleanup, isOwner, roomParticipants, kickUser, closeRoom } = useSocket(
     roomId,
     username,
-    isEphemeral
+    isEphemeral,
+    useCallback(() => {
+      alert('Você foi removido da sala')
+      router.push('/chat')
+    }, [router]),
+    useCallback(() => {
+      alert('A sala foi encerrada pelo criador')
+      router.push('/chat')
+    }, [router])
   )
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)
@@ -46,6 +56,19 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     }
   }, [])
 
+  const handleKickUser = useCallback(
+    (targetUsername: string) => {
+      kickUser(targetUsername)
+    },
+    [kickUser]
+  )
+
+  const handleCloseRoom = useCallback(() => {
+    if (window.confirm('Fechar a sala vai desconectar todos e apagar tudo. Confirmar?')) {
+      closeRoom()
+    }
+  }, [closeRoom])
+
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -61,6 +84,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   }
 
   const displayName = isEphemeral ? 'Sala Rápida' : roomName
+  const showAdminControls = isOwner && isEphemeral
 
   return (
     // h-dvh: uses dynamic viewport height — accounts for mobile browser chrome/keyboard
@@ -83,11 +107,21 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span
-            className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-slate-600'}`}
-          />
-          <span>{onlineCount} online</span>
+        <div className="flex items-center gap-3">
+          {showAdminControls && (
+            <button
+              onClick={handleCloseRoom}
+              className="rounded-lg bg-red-700 hover:bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+            >
+              Fechar Sala
+            </button>
+          )}
+          <div className="flex items-center gap-2 text-sm text-slate-400">
+            <span
+              className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-slate-600'}`}
+            />
+            <span>{onlineCount} online</span>
+          </div>
         </div>
       </header>
 
@@ -104,6 +138,29 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
           >
             {copied ? '✓ Copiado' : 'Copiar'}
           </button>
+        </div>
+      )}
+
+      {/* Owner participants panel — ephemeral rooms only */}
+      {showAdminControls && roomParticipants.length > 0 && (
+        <div className="shrink-0 bg-slate-800/60 border-b border-slate-700 px-4 py-2">
+          <p className="text-xs text-slate-400 font-medium mb-1.5">Participantes</p>
+          <div className="flex flex-wrap gap-2">
+            {roomParticipants.map((participant) => (
+              <div key={participant} className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-300">{participant}</span>
+                {participant !== username && (
+                  <button
+                    onClick={() => handleKickUser(participant)}
+                    className="text-xs text-red-400 hover:text-red-300 transition-colors leading-none"
+                    title={`Remover ${participant}`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

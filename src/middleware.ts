@@ -7,7 +7,8 @@ export async function middleware(req: NextRequest) {
   const session = await getIronSession<SessionData>(req, res, sessionOptions)
 
   if (!session.isLoggedIn) {
-    return NextResponse.redirect(new URL('/', req.url))
+    const callbackUrl = encodeURIComponent(req.nextUrl.pathname)
+    return NextResponse.redirect(new URL(`/?callbackUrl=${callbackUrl}`, req.url))
   }
 
   return res

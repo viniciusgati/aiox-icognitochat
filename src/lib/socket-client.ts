@@ -13,13 +13,27 @@ export interface Message {
   own: boolean
 }
 
-export function useSocket(roomId: string, username: string, ephemeral = false) {
+export function useSocket(
+  roomId: string,
+  username: string,
+  ephemeral = false,
+  onKicked?: () => void,
+  onRoomClosed?: () => void
+) {
   const socketRef = useRef<Socket | null>(null)
   const keyRef = useRef<CryptoKey | null>(null)
   const messagesRef = useRef<Message[]>([])
+  const onKickedRef = useRef(onKicked)
+  const onRoomClosedRef = useRef(onRoomClosed)
   const [messages, setMessages] = useState<Message[]>([])
   const [onlineCount, setOnlineCount] = useState(0)
   const [connected, setConnected] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
+  const [roomParticipants, setRoomParticipants] = useState<string[]>([])
+
+  // Keep callback refs up to date without re-running the main effect
+  useEffect(() => { onKickedRef.current = onKicked }, [onKicked])
+  useEffect(() => { onRoomClosedRef.current = onRoomClosed }, [onRoomClosed])
 
   useEffect(() => {
     let socket: Socket
@@ -37,6 +51,22 @@ export function useSocket(roomId: string, username: string, ephemeral = false) {
 
       socket.on('room-users', (count: number) => {
         setOnlineCount(count)
+      })
+
+      socket.on('room-users-list', (participants: string[]) => {
+        setRoomParticipants(participants)
+      })
+
+      socket.on('room-owner', () => {
+        setIsOwner(true)
+      })
+
+      socket.on('kicked', () => {
+        onKickedRef.current?.()
+      })
+
+      socket.on('room-closed', () => {
+        onRoomClosedRef.current?.()
       })
 
       socket.on(
@@ -121,5 +151,26 @@ export function useSocket(roomId: string, username: string, ephemeral = false) {
     [roomId, username]
   )
 
-  return { messages, onlineCount, connected, sendMessage, cleanup }
+  const kickUser = useCallback(
+    (targetUsername: string) => {
+      socketRef.current?.emit('kick-user', { roomId, targetUsername })
+    },
+    [roomId]
+  )
+
+  const closeRoom = useCallback(() => {
+    socketRef.current?.emit('close-room', { roomId })
+  }, [roomId])
+
+  return {
+    messages,
+    onlineCount,
+    connected,
+    sendMessage,
+    cleanup,
+    isOwner,
+    roomParticipants,
+    kickUser,
+    closeRoom,
+  }
 }

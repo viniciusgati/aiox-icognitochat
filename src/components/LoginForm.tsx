@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const rawCallback = searchParams.get('callbackUrl')
+  const safeRedirect = rawCallback?.startsWith('/chat') ? rawCallback : '/chat'
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -29,7 +32,7 @@ export default function LoginForm() {
         return
       }
 
-      router.push('/chat')
+      router.push(safeRedirect)
     } catch {
       setError('Erro de conexão. Tente novamente.')
     } finally {

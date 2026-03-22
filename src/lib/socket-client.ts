@@ -34,7 +34,8 @@ export function useSocket(
   onServerDestroyed?: () => void,
   onJoinDenied?: () => void,
   maxParticipants?: number,
-  messageTtlSeconds?: number
+  messageTtlSeconds?: number,
+  onScreenShareKick?: (kickedUsername: string) => void
 ) {
   const socketRef = useRef<Socket | null>(null)
   const keyRef = useRef<CryptoKey | null>(null)
@@ -44,6 +45,7 @@ export function useSocket(
   const onForceLogoutRef = useRef(onForceLogout)
   const onServerDestroyedRef = useRef(onServerDestroyed)
   const onJoinDeniedRef = useRef(onJoinDenied)
+  const onScreenShareKickRef = useRef(onScreenShareKick)
   // TTL removal timers: msgId → timeout handle
   const ttlTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   // Blob URLs created for image messages — revoked on cleanup
@@ -66,6 +68,7 @@ export function useSocket(
   useEffect(() => { onForceLogoutRef.current = onForceLogout }, [onForceLogout])
   useEffect(() => { onServerDestroyedRef.current = onServerDestroyed }, [onServerDestroyed])
   useEffect(() => { onJoinDeniedRef.current = onJoinDenied }, [onJoinDenied])
+  useEffect(() => { onScreenShareKickRef.current = onScreenShareKick }, [onScreenShareKick])
 
   /** Schedule auto-removal of a message after TTL. Safe to call with no TTL. */
   const scheduleExpiry = useCallback(
@@ -135,6 +138,10 @@ export function useSocket(
 
       socket.on('join-denied', () => {
         onJoinDeniedRef.current?.()
+      })
+
+      socket.on('user:kicked-screen-share', ({ username: kickedUsername }: { username: string }) => {
+        onScreenShareKickRef.current?.(kickedUsername)
       })
 
       socket.on('user-typing', ({ username: typingUsername }: { username: string }) => {
@@ -357,6 +364,10 @@ export function useSocket(
     socketRef.current?.emit('close-room', { roomId })
   }, [roomId])
 
+  const reportScreenShare = useCallback(() => {
+    socketRef.current?.emit('screen:sharing-detected', { roomId, username })
+  }, [roomId, username])
+
   const sendImage = useCallback(
     async (file: File): Promise<{ error?: string }> => {
       if (!socketRef.current || !keyRef.current) return { error: 'Não conectado' }
@@ -439,6 +450,7 @@ export function useSocket(
     roomParticipants,
     kickUser,
     closeRoom,
+    reportScreenShare,
     typingUsers,
     sendTypingStart,
     sendTypingStop,

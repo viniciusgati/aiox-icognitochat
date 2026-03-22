@@ -170,6 +170,29 @@ app.prepare().then(() => {
       }
     )
 
+    socket.on(
+      'screen:sharing-detected',
+      ({ roomId, username }: { roomId: string; username: string }) => {
+        const users = roomUsers.get(roomId)
+        // Notify other participants
+        socket.to(roomId).emit('user:kicked-screen-share', {
+          username,
+          reason: 'screen-sharing',
+        })
+        // Remove user from room tracking
+        if (users) {
+          users.delete(socket.id)
+          io.to(roomId).emit('room-users', users.size)
+          io.to(roomId).emit('room-users-list', Array.from(users.values()))
+          if (users.size === 0) handleRoomEmpty(roomId)
+        }
+        // Reuse existing 'kicked' event to trigger client redirect
+        socket.emit('kicked')
+        socket.leave(roomId)
+        logger.info({ roomId, username }, 'User kicked for screen sharing')
+      }
+    )
+
     socket.on('close-room', ({ roomId }: { roomId: string }) => {
       if (roomOwners.get(roomId) !== socket.id) return
       io.to(roomId).emit('room-closed')

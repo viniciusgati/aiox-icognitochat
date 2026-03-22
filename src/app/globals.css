@@ -37,6 +37,17 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /**
+   * Anti-capture CSS: applied when screen sharing is detected via browser.
+   * Makes chat content appear black/dark in screen recordings (Chrome/Edge tab capture).
+   * Content remains visible to the local user.
+   * NOTE: Does NOT affect OS-level recordings or native screen capture tools.
+   */
+  .screen-sharing-active .chat-messages {
+    filter: brightness(0.05);
+    transition: filter 0.3s ease;
+  }
+
   /*
    * safe-top: padding no CONTAINER (não no header).
    * Garante que o fundo do app preenche a área da status bar

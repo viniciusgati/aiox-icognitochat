@@ -9,6 +9,7 @@ import MessageBubble from './MessageBubble'
 import NotificationSettings from './NotificationSettings'
 import { getPrefs, playSound } from '@/lib/notification-prefs'
 import { usePushSubscription } from '@/lib/use-push-subscription'
+import { useScreenCaptureDetection } from '@/lib/use-screen-capture-detection'
 
 interface Props {
   roomId: string
@@ -27,6 +28,9 @@ function formatTtl(seconds: number): string {
 
 export default function ChatWindow({ roomId, username, roomName, isEphemeral = false, maxParticipants, messageTtlSeconds }: Props) {
   const router = useRouter()
+  const [screenShareBanner, setScreenShareBanner] = useState<number | null>(null) // countdown seconds
+  const [screenShareKickNotice, setScreenShareKickNotice] = useState<string | null>(null)
+
   const {
     messages,
     onlineCount,
@@ -39,6 +43,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     roomParticipants,
     kickUser,
     closeRoom,
+    reportScreenShare,
     typingUsers,
     sendTypingStart,
     sendTypingStop,
@@ -64,10 +69,15 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       router.push('/chat')
     }, [router]),
     maxParticipants,
-    messageTtlSeconds
+    messageTtlSeconds,
+    useCallback((kickedUsername: string) => {
+      setScreenShareKickNotice(`${kickedUsername} foi removido por compartilhamento de tela.`)
+      setTimeout(() => setScreenShareKickNotice(null), 5000)
+    }, [])
   )
 
   const { status: pushStatus, error: pushError, requestPermission: requestPush } = usePushSubscription()
+  const { isBeingCaptured } = useScreenCaptureDetection()
 
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)
@@ -80,6 +90,43 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   // Tab badge: unread count when tab is hidden
   const unreadRef = useRef(0)
   const originalTitleRef = useRef<string>('')
+
+  // Screen share detection: show countdown banner → kick after 3s
+  useEffect(() => {
+    if (!isBeingCaptured) {
+      setScreenShareBanner(null)
+      document.body.classList.remove('screen-sharing-active')
+      return
+    }
+
+    document.body.classList.add('screen-sharing-active')
+    setScreenShareBanner(3)
+
+    const countdownInterval = setInterval(() => {
+      setScreenShareBanner((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownInterval)
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    const kickTimeout = setTimeout(async () => {
+      reportScreenShare()
+      await fetch(`/api/rooms/${roomId}/kick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'screen-sharing' }),
+      })
+    }, 3000)
+
+    return () => {
+      clearInterval(countdownInterval)
+      clearTimeout(kickTimeout)
+      document.body.classList.remove('screen-sharing-active')
+    }
+  }, [isBeingCaptured, reportScreenShare, roomId])
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -198,6 +245,20 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
   return (
     <div className="fixed inset-0 flex flex-col bg-surface-950 text-zinc-100 overflow-hidden safe-top">
+      {/* Screen share detection banner */}
+      {screenShareBanner !== null && (
+        <div className="fixed inset-x-0 top-0 z-[300] flex items-center justify-center bg-red-600 text-white text-sm font-semibold py-3 px-4 gap-2">
+          <span>⚠️ Compartilhamento de tela detectado. Sua sessão será encerrada em {screenShareBanner}s…</span>
+        </div>
+      )}
+      {/* Screen share kick notification for other participants */}
+      {screenShareKickNotice && (
+        <div className="fixed bottom-20 inset-x-0 z-[300] flex justify-center pointer-events-none">
+          <div className="bg-zinc-800 border border-white/10 text-zinc-300 text-xs rounded-xl px-4 py-2 shadow-lg">
+            {screenShareKickNotice}
+          </div>
+        </div>
+      )}
       {/* Header — glass effect */}
       <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0 z-50 relative">
         <div className="flex items-center gap-3">
@@ -251,6 +312,15 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
                 onRequestPush={requestPush}
               />
             )}
+          </div>
+          {/* Screen protection indicator */}
+          <div
+            title="Protege contra compartilhamento via browser. Não detecta gravadores nativos do OS."
+            className="text-zinc-600 hover:text-zinc-400 transition-colors cursor-help p-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            </svg>
           </div>
         </div>
       </header>
@@ -314,7 +384,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* Messages */}
       <div
-        className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3"
+        className="chat-messages flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {messages.length === 0 && (

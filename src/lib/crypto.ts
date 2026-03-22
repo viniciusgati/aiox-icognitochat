@@ -53,3 +53,24 @@ export async function decryptMessage(
   )
   return DEC.decode(plainbuf)
 }
+
+export async function encryptBinary(
+  key: CryptoKey,
+  data: ArrayBuffer
+): Promise<{ ciphertext: ArrayBuffer; iv: string }> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data)
+  return {
+    ciphertext,
+    iv: btoa(Array.from(iv, (b) => String.fromCharCode(b)).join('')),
+  }
+}
+
+export async function decryptBinary(
+  key: CryptoKey,
+  ciphertext: ArrayBuffer,
+  iv: string
+): Promise<ArrayBuffer> {
+  const ivbuf = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0))
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivbuf }, key, ciphertext)
+}

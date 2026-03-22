@@ -15,17 +15,20 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
   })
 
   const hasReactions = message.reactions && Object.values(message.reactions).some((c) => c > 0)
+  const isImage = Boolean(message.imageSrc)
 
   return (
     <div className={`flex flex-col group ${message.own ? 'items-end' : 'items-start'}`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+        className={`max-w-[80%] rounded-2xl ${
+          isImage ? 'overflow-hidden p-0' : 'px-4 py-2'
+        } ${
           message.own
             ? 'bg-indigo-600 text-white rounded-br-sm'
             : 'bg-slate-800 text-slate-100 rounded-bl-sm'
         }`}
       >
-        {!message.own && (
+        {!message.own && !isImage && (
           <p className="text-xs font-semibold text-indigo-400 mb-1">{message.username}</p>
         )}
 
@@ -49,10 +52,33 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
           </div>
         )}
 
-        <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
-        <p className={`text-xs mt-1 text-right ${message.own ? 'text-indigo-300' : 'text-slate-500'}`}>
-          {time}
-        </p>
+        {/* Image or text content */}
+        {isImage ? (
+          <div className="relative">
+            {!message.own && (
+              <p className="absolute top-2 left-2 text-xs font-semibold text-white drop-shadow bg-black/40 rounded px-1">
+                {message.username}
+              </p>
+            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={message.imageSrc}
+              alt={`Imagem de ${message.username}`}
+              className="max-w-xs max-h-64 object-contain block"
+              loading="lazy"
+            />
+            <p className={`text-xs px-2 py-0.5 text-right ${message.own ? 'text-indigo-300' : 'text-slate-500'}`}>
+              {time}
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+            <p className={`text-xs mt-1 text-right ${message.own ? 'text-indigo-300' : 'text-slate-500'}`}>
+              {time}
+            </p>
+          </>
+        )}
       </div>
 
       {/* Reactions display */}
@@ -82,7 +108,7 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
 
       {/* Hover actions */}
       <div className={`flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${message.own ? 'flex-row-reverse' : ''}`}>
-        {onReply && (
+        {onReply && !isImage && (
           <button
             onClick={() => onReply(message)}
             className="text-xs text-slate-500 hover:text-slate-300 px-2 py-0.5 rounded transition-colors"

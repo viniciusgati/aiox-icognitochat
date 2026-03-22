@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, useState, KeyboardEvent, useCallback } from 'react'
+import React, { useRef, useEffect, useState, KeyboardEvent, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useSocket } from '@/lib/socket-client'
@@ -67,6 +67,9 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)
   const [replyingTo, setReplyingTo] = useState<ReplyTo | null>(null)
+  const [imageError, setImageError] = useState('')
+  const [sendingImage, setSendingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   // Tab badge: unread count when tab is hidden
   const unreadRef = useRef(0)
@@ -146,6 +149,21 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       sendReaction(messageId, emoji)
     },
     [sendReaction]
+  )
+
+  const handleImageSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!fileInputRef.current) return
+      fileInputRef.current.value = ''
+      if (!file) return
+      setImageError('')
+      setSendingImage(true)
+      const result = await sendImage(file)
+      setSendingImage(false)
+      if (result.error) setImageError(result.error)
+    },
+    [sendImage]
   )
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -326,7 +344,36 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
 
       {/* Input — pb-safe for home bar on iOS/Android */}
       <div className="border-t border-slate-700 p-4 shrink-0 pb-safe">
+        {imageError && (
+          <p className="text-xs text-red-400 mb-2 text-center">{imageError}</p>
+        )}
         <div className="flex gap-2 items-end">
+          {/* Hidden file input for images */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={handleImageSelect}
+          />
+          <button
+            type="button"
+            onClick={() => { setImageError(''); fileInputRef.current?.click() }}
+            disabled={!connected || sendingImage}
+            className="shrink-0 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 p-2 text-slate-300 transition-colors"
+            title="Enviar imagem"
+            aria-label="Enviar imagem"
+          >
+            {sendingImage ? (
+              <span className="block w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            )}
+          </button>
           <textarea
             value={input}
             onChange={(e) => {

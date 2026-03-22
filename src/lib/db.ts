@@ -4,9 +4,13 @@ import fs from 'fs'
 
 const DB_PATH = process.env.DB_PATH ?? path.join(process.cwd(), 'data', 'icognitochat.db')
 const DATA_DIR = path.dirname(DB_PATH)
+export const IMAGES_DIR = path.join(DATA_DIR, 'images')
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
+}
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true })
 }
 
 const db = new Database(DB_PATH)
@@ -43,8 +47,15 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 
+  CREATE TABLE IF NOT EXISTS room_images (
+    id TEXT PRIMARY KEY,
+    room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
   CREATE INDEX IF NOT EXISTS idx_messages_room_id ON messages(room_id);
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+  CREATE INDEX IF NOT EXISTS idx_room_images_room_id ON room_images(room_id);
 `)
 
 // Migration: add slug column to existing rooms table if not present
@@ -76,8 +87,28 @@ db.prepare(`
 
 export default db
 
-/** Delete an ephemeral room from the database by slug. */
+/** Delete image files for a room from disk. Returns number of deleted files. */
+export function deleteRoomImages(slug: string): number {
+  const room = db.prepare('SELECT id FROM rooms WHERE slug = ?').get(slug) as { id: number } | undefined
+  if (!room) return 0
+  const images = db
+    .prepare('SELECT id FROM room_images WHERE room_id = ?')
+    .all(room.id) as { id: string }[]
+  let deleted = 0
+  for (const img of images) {
+    try {
+      fs.unlinkSync(path.join(IMAGES_DIR, `${img.id}.bin`))
+      deleted++
+    } catch {
+      // File may not exist — ignore
+    }
+  }
+  return deleted
+}
+
+/** Delete an ephemeral room from the database by slug (also cleans image files). */
 export function deleteRoom(slug: string): void {
+  deleteRoomImages(slug)
   db.prepare('DELETE FROM rooms WHERE slug = ?').run(slug)
 }
 

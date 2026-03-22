@@ -842,13 +842,13 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="border-b border-slate-700 px-6">
-        <nav className="flex gap-1">
+      <div className="border-b border-slate-700 overflow-x-auto">
+        <nav className="flex gap-1 px-2 min-w-max">
           {TABS.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setTab(id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === id
                   ? 'border-indigo-500 text-indigo-400'
                   : 'border-transparent text-slate-400 hover:text-slate-200'

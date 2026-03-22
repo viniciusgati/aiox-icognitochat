@@ -32,12 +32,19 @@
 }
 
 @layer utilities {
-  /* Safe area inset for notch/home-bar devices (iOS, Android) */
+  /* Safe area insets — applied at container level, not per-element */
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .pt-safe {
+  /*
+   * safe-top: padding no CONTAINER (não no header).
+   * Garante que o fundo do app preenche a área da status bar
+   * em iOS (notch/Dynamic Island), Android PWA e browser.
+   * env() retorna 0 em dispositivos sem notch em modo browser —
+   * correto, pois o viewport já começa abaixo da barra.
+   */
+  .safe-top {
     padding-top: env(safe-area-inset-top, 0px);
   }
 

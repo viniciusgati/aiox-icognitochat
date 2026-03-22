@@ -22,8 +22,8 @@ export default async function RoomPage({ params, searchParams }: Props) {
   const maxParticipants = max ? parseInt(max, 10) : undefined
 
   const room = db
-    .prepare('SELECT name, is_ephemeral FROM rooms WHERE slug = ?')
-    .get(roomId) as { name: string; is_ephemeral: number } | undefined
+    .prepare('SELECT name, is_ephemeral, message_ttl_seconds FROM rooms WHERE slug = ?')
+    .get(roomId) as { name: string; is_ephemeral: number; message_ttl_seconds: number | null } | undefined
 
   if (!room) {
     redirect('/chat')
@@ -36,6 +36,7 @@ export default async function RoomPage({ params, searchParams }: Props) {
       roomName={room.name}
       isEphemeral={room.is_ephemeral === 1}
       maxParticipants={maxParticipants}
+      messageTtlSeconds={room.message_ttl_seconds ?? undefined}
     />
   )
 }

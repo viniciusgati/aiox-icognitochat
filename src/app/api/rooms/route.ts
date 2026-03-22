@@ -5,6 +5,14 @@ import crypto from 'crypto'
 import db from '@/lib/db'
 import { sessionOptions, SessionData } from '@/lib/session'
 
+const ALLOWED_TTLS = new Set([30, 60, 300, 600, 1800, 3600])
+
+function parseTtl(value: unknown): number | null {
+  if (value === null || value === undefined) return null
+  const n = Number(value)
+  return ALLOWED_TTLS.has(n) ? n : null
+}
+
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -44,16 +52,21 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const ephemeral = body.ephemeral === true
+  const ttl = parseTtl(body.messageTtlSeconds)
 
   if (ephemeral) {
     const slug = generateEphemeralSlug()
     // Name = slug to satisfy UNIQUE constraint (slug is always unique)
     const result = db
-      .prepare('INSERT INTO rooms (slug, name, created_by, is_ephemeral) VALUES (?, ?, ?, 1)')
-      .run(slug, slug, session.userId)
+      .prepare(
+        'INSERT INTO rooms (slug, name, created_by, is_ephemeral, message_ttl_seconds) VALUES (?, ?, ?, 1, ?)'
+      )
+      .run(slug, slug, session.userId, ttl)
 
     const room = db
-      .prepare('SELECT id, slug, name, created_at, is_ephemeral FROM rooms WHERE id = ?')
+      .prepare(
+        'SELECT id, slug, name, created_at, is_ephemeral, message_ttl_seconds FROM rooms WHERE id = ?'
+      )
       .get(result.lastInsertRowid)
 
     return NextResponse.json({ room }, { status: 201 })
@@ -81,11 +94,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = db
-      .prepare('INSERT INTO rooms (slug, name, created_by, is_ephemeral) VALUES (?, ?, ?, 0)')
-      .run(slug, trimmedName, session.userId)
+      .prepare(
+        'INSERT INTO rooms (slug, name, created_by, is_ephemeral, message_ttl_seconds) VALUES (?, ?, ?, 0, ?)'
+      )
+      .run(slug, trimmedName, session.userId, ttl)
 
     const room = db
-      .prepare('SELECT id, slug, name, created_at, is_ephemeral FROM rooms WHERE id = ?')
+      .prepare(
+        'SELECT id, slug, name, created_at, is_ephemeral, message_ttl_seconds FROM rooms WHERE id = ?'
+      )
       .get(result.lastInsertRowid)
 
     return NextResponse.json({ room }, { status: 201 })

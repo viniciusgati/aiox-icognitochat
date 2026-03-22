@@ -30,7 +30,8 @@ export function useSocket(
   onForceLogout?: () => void,
   onServerDestroyed?: () => void,
   onJoinDenied?: () => void,
-  maxParticipants?: number
+  maxParticipants?: number,
+  messageTtlSeconds?: number
 ) {
   const socketRef = useRef<Socket | null>(null)
   const keyRef = useRef<CryptoKey | null>(null)
@@ -40,6 +41,8 @@ export function useSocket(
   const onForceLogoutRef = useRef(onForceLogout)
   const onServerDestroyedRef = useRef(onServerDestroyed)
   const onJoinDeniedRef = useRef(onJoinDenied)
+  // TTL removal timers: msgId → timeout handle
+  const ttlTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const [messages, setMessages] = useState<Message[]>([])
   const [onlineCount, setOnlineCount] = useState(0)
   const [connected, setConnected] = useState(false)
@@ -59,10 +62,30 @@ export function useSocket(
   useEffect(() => { onServerDestroyedRef.current = onServerDestroyed }, [onServerDestroyed])
   useEffect(() => { onJoinDeniedRef.current = onJoinDenied }, [onJoinDenied])
 
+  /** Schedule auto-removal of a message after TTL. Safe to call with no TTL. */
+  const scheduleExpiry = useCallback(
+    (msgId: string, sentAt: number) => {
+      if (!messageTtlSeconds) return
+      const remaining = messageTtlSeconds * 1000 - (Date.now() - sentAt)
+      if (remaining <= 0) return // already expired — caller should not add this message
+      const handle = setTimeout(() => {
+        setMessages((prev) => {
+          const next = prev.filter((m) => m.id !== msgId)
+          messagesRef.current = next
+          return next
+        })
+        ttlTimers.current.delete(msgId)
+      }, remaining)
+      ttlTimers.current.set(msgId, handle)
+    },
+    [messageTtlSeconds]
+  )
+
   useEffect(() => {
     let socket: Socket
     // Capture ref value for cleanup (react-hooks/exhaustive-deps)
     const timeouts = typingTimeouts.current
+    const timers = ttlTimers.current
 
     async function init() {
       keyRef.current = await deriveRoomKey(roomId)
@@ -148,6 +171,8 @@ export function useSocket(
               data.ciphertext,
               data.iv
             )
+            // Discard if TTL already expired before we received it
+            if (messageTtlSeconds && Date.now() - data.timestamp >= messageTtlSeconds * 1000) return
             const newMsg: Message = {
               id: data.msgId,
               username: data.username,
@@ -161,6 +186,7 @@ export function useSocket(
               messagesRef.current = next
               return next
             })
+            scheduleExpiry(data.msgId, data.timestamp)
           } catch {
             // Silently ignore decrypt errors (wrong room key / corrupted data)
           }
@@ -187,10 +213,12 @@ export function useSocket(
       if (typingDebounce.current) clearTimeout(typingDebounce.current)
       timeouts.forEach((t) => clearTimeout(t))
       timeouts.clear()
+      timers.forEach((t) => clearTimeout(t))
+      timers.clear()
       socket?.emit('leave-room', roomId)
       socket?.disconnect()
     }
-  }, [roomId, username, ephemeral, maxParticipants])
+  }, [roomId, username, ephemeral, maxParticipants, messageTtlSeconds, scheduleExpiry])
 
   /** Zeroize sensitive data from memory (best-effort). */
   const cleanup = useCallback(() => {
@@ -228,8 +256,9 @@ export function useSocket(
         messagesRef.current = next
         return next
       })
+      scheduleExpiry(msgId, timestamp)
     },
-    [roomId, username]
+    [roomId, username, scheduleExpiry]
   )
 
   const sendTypingStart = useCallback(() => {

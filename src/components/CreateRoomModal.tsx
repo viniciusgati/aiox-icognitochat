@@ -8,6 +8,7 @@ interface Room {
   name: string
   created_at?: number
   is_ephemeral?: number
+  message_ttl_seconds?: number | null
 }
 
 interface Props {
@@ -15,10 +16,21 @@ interface Props {
   onCreated: (room: Room, maxParticipants?: number) => void
 }
 
+const TTL_OPTIONS = [
+  { label: 'Desativado', value: '' },
+  { label: '30 segundos', value: '30' },
+  { label: '1 minuto', value: '60' },
+  { label: '5 minutos', value: '300' },
+  { label: '10 minutos', value: '600' },
+  { label: '30 minutos', value: '1800' },
+  { label: '1 hora', value: '3600' },
+]
+
 export default function CreateRoomModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState('')
   const [ephemeral, setEphemeral] = useState(false)
   const [maxParticipants, setMaxParticipants] = useState('')
+  const [messageTtl, setMessageTtl] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -33,9 +45,8 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
     setLoading(true)
 
     try {
-      const body = ephemeral
-        ? { ephemeral: true }
-        : { name }
+      const body: Record<string, unknown> = ephemeral ? { ephemeral: true } : { name }
+      if (messageTtl) body.messageTtlSeconds = parseInt(messageTtl, 10)
 
       const res = await fetch('/api/rooms', {
         method: 'POST',
@@ -140,6 +151,25 @@ export default function CreateRoomModal({ onClose, onCreated }: Props) {
               </div>
             </>
           )}
+
+          {/* TTL selector — available for all room types */}
+          <div>
+            <label htmlFor="message-ttl" className="block text-sm font-medium text-slate-300 mb-1">
+              Auto-destruir mensagens
+            </label>
+            <select
+              id="message-ttl"
+              value={messageTtl}
+              onChange={(e) => setMessageTtl(e.target.value)}
+              className="w-full rounded-lg bg-slate-700 border border-slate-600 px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {TTL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {error && (
             <p role="alert" className="text-sm text-red-400">

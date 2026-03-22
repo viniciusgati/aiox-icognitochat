@@ -13,9 +13,16 @@ interface Props {
   roomName: string
   isEphemeral?: boolean
   maxParticipants?: number
+  messageTtlSeconds?: number
 }
 
-export default function ChatWindow({ roomId, username, roomName, isEphemeral = false, maxParticipants }: Props) {
+function formatTtl(seconds: number): string {
+  if (seconds < 60) return `${seconds} segundos`
+  if (seconds < 3600) return `${seconds / 60} ${seconds / 60 === 1 ? 'minuto' : 'minutos'}`
+  return `${seconds / 3600} hora`
+}
+
+export default function ChatWindow({ roomId, username, roomName, isEphemeral = false, maxParticipants, messageTtlSeconds }: Props) {
   const router = useRouter()
   const {
     messages,
@@ -52,7 +59,8 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       alert('Sala lotada — limite de participantes atingido')
       router.push('/chat')
     }, [router]),
-    maxParticipants
+    maxParticipants,
+    messageTtlSeconds
   )
 
   const [input, setInput] = useState('')
@@ -234,6 +242,15 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* TTL banner */}
+      {messageTtlSeconds && (
+        <div className="shrink-0 bg-rose-900/20 border-b border-rose-800/40 px-4 py-1.5">
+          <p className="text-xs text-rose-400 text-center">
+            🔥 Mensagens se autodestroem em {formatTtl(messageTtlSeconds)}
+          </p>
         </div>
       )}
 

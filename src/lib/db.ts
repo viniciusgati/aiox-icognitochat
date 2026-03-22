@@ -61,6 +61,13 @@ try {
   // Column already exists — ignore
 }
 
+// Migration: add message_ttl_seconds column if not present
+try {
+  db.exec(`ALTER TABLE rooms ADD COLUMN message_ttl_seconds INTEGER`)
+} catch {
+  // Column already exists — ignore
+}
+
 // Seed: sala "Geral" sempre presente
 db.prepare(`
   INSERT OR IGNORE INTO rooms (slug, name, description, is_private)

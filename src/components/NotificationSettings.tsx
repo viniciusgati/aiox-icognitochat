@@ -86,7 +86,7 @@ export default function NotificationSettings({ onClose, pushStatus, onRequestPus
   }
 
   return (
-    <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl bg-zinc-900 border border-white/[0.08] shadow-modal p-4 space-y-4">
+    <div className="absolute right-0 top-full mt-2 z-[100] w-72 rounded-xl bg-zinc-900 border border-white/[0.08] shadow-modal p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-200">Notificações</h3>
         <button

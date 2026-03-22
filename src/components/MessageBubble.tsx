@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Message } from '@/lib/socket-client'
 import { getUserColor, getUserInitials } from '@/lib/user-color'
 
@@ -23,7 +24,32 @@ function Avatar({ username }: { username: string }) {
   )
 }
 
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl leading-none bg-black/40 rounded-full w-9 h-9 flex items-center justify-center transition-colors"
+        aria-label="Fechar"
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 export default function MessageBubble({ message, onReply, onReact }: Props) {
+  const [lightbox, setLightbox] = useState(false)
   const time = new Date(message.timestamp).toLocaleTimeString('pt-BR', {
     hour: '2-digit',
     minute: '2-digit',
@@ -33,6 +59,7 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
   const isImage = Boolean(message.imageSrc)
 
   return (
+    <>
     <div className={`flex gap-2 group ${message.own ? 'flex-row-reverse' : 'flex-row'}`}>
       {/* Avatar — only for others */}
       {!message.own && (
@@ -93,8 +120,9 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
               <img
                 src={message.imageSrc}
                 alt={`Imagem de ${message.username}`}
-                className="max-w-xs max-h-72 object-contain block"
+                className="max-w-xs max-h-72 object-contain block cursor-zoom-in"
                 loading="lazy"
+                onClick={() => setLightbox(true)}
               />
               <p className={`text-[10px] px-2 py-0.5 text-right ${message.own ? 'text-white/50' : 'text-zinc-500'}`}>
                 {time}
@@ -158,5 +186,14 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
         </div>
       </div>
     </div>
+
+    {lightbox && message.imageSrc && (
+      <ImageLightbox
+        src={message.imageSrc}
+        alt={`Imagem de ${message.username}`}
+        onClose={() => setLightbox(false)}
+      />
+    )}
+    </>
   )
 }

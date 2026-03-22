@@ -19,7 +19,8 @@ export function useSocket(
   ephemeral = false,
   onKicked?: () => void,
   onRoomClosed?: () => void,
-  onForceLogout?: () => void
+  onForceLogout?: () => void,
+  onServerDestroyed?: () => void
 ) {
   const socketRef = useRef<Socket | null>(null)
   const keyRef = useRef<CryptoKey | null>(null)
@@ -27,6 +28,7 @@ export function useSocket(
   const onKickedRef = useRef(onKicked)
   const onRoomClosedRef = useRef(onRoomClosed)
   const onForceLogoutRef = useRef(onForceLogout)
+  const onServerDestroyedRef = useRef(onServerDestroyed)
   const [messages, setMessages] = useState<Message[]>([])
   const [onlineCount, setOnlineCount] = useState(0)
   const [connected, setConnected] = useState(false)
@@ -43,6 +45,7 @@ export function useSocket(
   useEffect(() => { onKickedRef.current = onKicked }, [onKicked])
   useEffect(() => { onRoomClosedRef.current = onRoomClosed }, [onRoomClosed])
   useEffect(() => { onForceLogoutRef.current = onForceLogout }, [onForceLogout])
+  useEffect(() => { onServerDestroyedRef.current = onServerDestroyed }, [onServerDestroyed])
 
   useEffect(() => {
     let socket: Socket
@@ -83,6 +86,10 @@ export function useSocket(
       socket.on('force-logout', async () => {
         await fetch('/api/auth/logout', { method: 'POST' })
         window.location.href = '/'
+      })
+
+      socket.on('server-destroyed', () => {
+        onServerDestroyedRef.current?.()
       })
 
       socket.on('user-typing', ({ username: typingUsername }: { username: string }) => {

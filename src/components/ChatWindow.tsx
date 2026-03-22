@@ -26,6 +26,11 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     useCallback(() => {
       alert('A sala foi encerrada pelo criador')
       router.push('/chat')
+    }, [router]),
+    undefined,
+    useCallback(() => {
+      alert('O servidor foi encerrado pelo administrador')
+      router.push('/')
     }, [router])
   )
   const [input, setInput] = useState('')

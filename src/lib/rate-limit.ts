@@ -1,3 +1,39 @@
+// ── Counter-based rate limit (counts ALL calls, including successes) ──────────
+// Used by endpoints where even a successful call should count against the limit.
+
+const counterStore = new Map<string, { count: number; resetAt: number }>()
+
+/** Rate-limit constants for the destroy endpoint. */
+export const DESTROY_LIMIT = { max: 3, windowMs: 15 * 60 * 1000 }
+
+/**
+ * Generic counter-based rate limiter.
+ * Every call (success or failure) counts toward the limit.
+ */
+export function checkRateLimit(
+  ip: string,
+  max: number,
+  windowMs: number
+): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now()
+  const entry = counterStore.get(ip)
+
+  if (!entry || now > entry.resetAt) {
+    counterStore.set(ip, { count: 1, resetAt: now + windowMs })
+    return { allowed: true }
+  }
+
+  if (entry.count >= max) {
+    return { allowed: false, retryAfter: Math.ceil((entry.resetAt - now) / 1000) }
+  }
+
+  entry.count++
+  return { allowed: true }
+}
+
+// ── Failure-based rate limit (RateLimiter class) ──────────────────────────────
+// Used by login/admin endpoints where only wrong-password attempts count.
+
 interface RateEntry {
   failures: number
   windowStart: number

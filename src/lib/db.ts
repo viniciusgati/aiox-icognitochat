@@ -89,6 +89,20 @@ export function deleteExpiredMessages(ttlHours: number): number {
 }
 
 /**
+ * Delete ALL data (users, rooms, messages) in a single transaction.
+ * The database file is preserved — the server keeps running with empty tables.
+ * Returns the number of deleted rows per table.
+ */
+export function destroyAllData(): { users: number; rooms: number } {
+  return db.transaction(() => {
+    db.prepare('DELETE FROM messages').run()
+    const rooms = db.prepare('DELETE FROM rooms').run()
+    const users = db.prepare('DELETE FROM users').run()
+    return { users: users.changes, rooms: rooms.changes }
+  })()
+}
+
+/**
  * Overwrite the SQLite database file with zeros and delete it.
  *
  * ⚠️  DESTRUIÇÃO PERMANENTE: apaga todos os usuários, salas e dados do banco.

@@ -8,6 +8,10 @@ const BCRYPT_ROUNDS = 10
 export async function POST(req: NextRequest) {
   const masterPassword = req.headers.get('x-master-password')
 
+  console.log('[admin] header recebido:', masterPassword ? `${masterPassword.slice(0, 6)}...` : 'null')
+  console.log('[admin] env definido:', !!process.env.MASTER_PASSWORD)
+  console.log('[admin] match:', masterPassword === process.env.MASTER_PASSWORD)
+
   if (!masterPassword || masterPassword !== process.env.MASTER_PASSWORD) {
     return NextResponse.json(
       { error: 'Não autorizado' },

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''
 
@@ -15,57 +15,81 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   return outputArray.buffer as ArrayBuffer
 }
 
+export type PushStatus = 'unsupported' | 'default' | 'granted' | 'denied' | 'loading'
+
+async function saveSubscription(sub: PushSubscription) {
+  const json = sub.toJSON()
+  const keys = json.keys as { p256dh: string; auth: string }
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      endpoint: sub.endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+    }),
+  }).catch(() => {})
+}
+
+function isPushSupported() {
+  return (
+    typeof window !== 'undefined' &&
+    'Notification' in window &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    !!VAPID_PUBLIC_KEY
+  )
+}
+
 export function usePushSubscription() {
+  const [status, setStatus] = useState<PushStatus>('loading')
+
+  // On mount: read current permission state without prompting
   useEffect(() => {
-    if (
-      typeof window === 'undefined' ||
-      !('Notification' in window) ||
-      !('serviceWorker' in navigator) ||
-      !('PushManager' in window) ||
-      !VAPID_PUBLIC_KEY
-    ) {
+    if (!isPushSupported()) {
+      setStatus('unsupported')
       return
     }
-
-    async function subscribe() {
-      try {
-        const permission = await Notification.requestPermission()
-        if (permission !== 'granted') return
-
-        const reg = await navigator.serviceWorker.ready
-        const existing = await reg.pushManager.getSubscription()
-        if (existing) {
-          // Already subscribed — ensure server has it
-          await saveSubscription(existing)
-          return
-        }
-
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    const perm = Notification.permission
+    if (perm === 'granted') {
+      setStatus('granted')
+      // Silently re-register existing subscription in case server lost it
+      navigator.serviceWorker.ready.then((reg) =>
+        reg.pushManager.getSubscription().then((sub) => {
+          if (sub) saveSubscription(sub)
         })
-        await saveSubscription(sub)
-      } catch {
-        // Permission denied or not supported — fail silently
-      }
+      ).catch(() => {})
+    } else if (perm === 'denied') {
+      setStatus('denied')
+    } else {
+      setStatus('default')
     }
-
-    async function saveSubscription(sub: PushSubscription) {
-      const json = sub.toJSON()
-      const keys = json.keys as { p256dh: string; auth: string }
-      await fetch('/api/push/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endpoint: sub.endpoint,
-          p256dh: keys.p256dh,
-          auth: keys.auth,
-        }),
-      }).catch(() => {
-        // Network error — ignore
-      })
-    }
-
-    subscribe()
   }, [])
+
+  // User-triggered: ask permission and subscribe
+  const requestPermission = useCallback(async (): Promise<PushStatus> => {
+    if (!isPushSupported()) return 'unsupported'
+    setStatus('loading')
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        setStatus(permission as PushStatus)
+        return permission as PushStatus
+      }
+      const reg = await navigator.serviceWorker.ready
+      const existing = await reg.pushManager.getSubscription()
+      const sub = existing ?? await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      })
+      await saveSubscription(sub)
+      setStatus('granted')
+      return 'granted'
+    } catch {
+      setStatus('default')
+      return 'default'
+    }
+  }, [])
+
+  return { status, requestPermission }
 }

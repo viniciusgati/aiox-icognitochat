@@ -67,7 +67,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     messageTtlSeconds
   )
 
-  usePushSubscription()
+  const { status: pushStatus, requestPermission: requestPush } = usePushSubscription()
 
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)
@@ -197,9 +197,9 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   const showAdminControls = isOwner && isEphemeral
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-surface-950 text-zinc-100 overflow-hidden">
-      {/* Header — glass effect, pt-safe for notch */}
-      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0 pt-safe">
+    <div className="fixed inset-0 flex flex-col bg-surface-950 text-zinc-100 overflow-hidden safe-top">
+      {/* Header — glass effect */}
+      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">
           <Link
             href="/chat"
@@ -242,7 +242,11 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
               🔔
             </button>
             {showNotifSettings && (
-              <NotificationSettings onClose={() => setShowNotifSettings(false)} />
+              <NotificationSettings
+                onClose={() => setShowNotifSettings(false)}
+                pushStatus={pushStatus}
+                onRequestPush={requestPush}
+              />
             )}
           </div>
         </div>

@@ -199,7 +199,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
   return (
     <div className="fixed inset-0 flex flex-col bg-surface-950 text-zinc-100 overflow-hidden safe-top">
       {/* Header — glass effect */}
-      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0">
+      <header className="glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3 shrink-0 z-50 relative">
         <div className="flex items-center gap-3">
           <Link
             href="/chat"

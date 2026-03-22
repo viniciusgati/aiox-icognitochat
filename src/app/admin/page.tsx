@@ -40,7 +40,13 @@ interface Settings {
   admin_only_chat: string
 }
 
-type Tab = 'overview' | 'users' | 'rooms' | 'settings' | 'system'
+interface PushUser {
+  id: number
+  username: string
+  has_push: boolean
+}
+
+type Tab = 'overview' | 'users' | 'rooms' | 'notifications' | 'settings' | 'system'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -484,6 +490,230 @@ function SettingsTab() {
   )
 }
 
+// ─── Notifications tab ────────────────────────────────────────────────────────
+
+const PUSH_TEMPLATES = [
+  'Olá {nome}, estou a caminho.',
+  'Olá {nome}, falta 1 hora para o seu caso.',
+  'Olá {nome}, seu atendimento começa em breve.',
+  'Olá {nome}, por favor aguarde.',
+]
+
+function NotificationsTab() {
+  const [users, setUsers] = useState<PushUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [selectAll, setSelectAll] = useState(false)
+  const [template, setTemplate] = useState(PUSH_TEMPLATES[0])
+  const [customMsg, setCustomMsg] = useState('')
+  const [useCustom, setUseCustom] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [results, setResults] = useState<{ username: string; ok: boolean; error?: string }[]>([])
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/push/subscribe')
+      if (!res.ok) { setError('Erro ao carregar usuários'); return }
+      const data = await res.json()
+      setUsers(data.users)
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function toggleUser(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setSelectAll(false)
+  }
+
+  function toggleAll() {
+    if (selectAll) {
+      setSelectedIds(new Set())
+      setSelectAll(false)
+    } else {
+      setSelectedIds(new Set(users.map((u) => u.id)))
+      setSelectAll(true)
+    }
+  }
+
+  async function handleSend() {
+    const message = useCustom ? customMsg.trim() : template
+    if (!message) { setError('Escreva uma mensagem'); return }
+
+    const targets = selectAll ? ('all' as const) : Array.from(selectedIds)
+    if (!selectAll && selectedIds.size === 0) { setError('Selecione ao menos um destinatário'); return }
+
+    setSending(true)
+    setError('')
+    setResults([])
+
+    try {
+      const res = await fetch('/api/auth/admin/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: targets, message }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? 'Erro ao enviar'); return }
+      setResults(data.results ?? [])
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const usersWithPush = users.filter((u) => u.has_push)
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <p className="text-sm text-slate-400">
+        Envie notificações push para usuários com permissão concedida.
+      </p>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {/* User list */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Destinatários</p>
+          <button
+            onClick={load}
+            className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            ↺ Atualizar
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="text-slate-500 text-sm py-4 text-center">Carregando…</p>
+        ) : (
+          <div className="rounded-lg border border-slate-700 overflow-hidden">
+            <div className="bg-slate-800 px-4 py-2 flex items-center gap-3 border-b border-slate-700">
+              <input
+                type="checkbox"
+                checked={selectAll}
+                onChange={toggleAll}
+                className="accent-indigo-500"
+              />
+              <span className="text-xs text-slate-400">
+                Todos ({usersWithPush.length} com push)
+              </span>
+            </div>
+            <div className="divide-y divide-slate-800 max-h-52 overflow-y-auto">
+              {users.map((user) => (
+                <label
+                  key={user.id}
+                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                    user.has_push ? 'hover:bg-slate-800/60' : 'opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!user.has_push}
+                    checked={selectedIds.has(user.id)}
+                    onChange={() => toggleUser(user.id)}
+                    className="accent-indigo-500"
+                  />
+                  <span className="text-sm text-slate-200 flex-1 font-mono">{user.username}</span>
+                  {user.has_push ? (
+                    <span className="text-[10px] text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded-full">push ativo</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">sem push</span>
+                  )}
+                </label>
+              ))}
+              {users.length === 0 && (
+                <p className="text-center text-slate-500 text-sm py-6">Nenhum usuário</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Template selector */}
+      <div className="space-y-3">
+        <p className="text-xs text-slate-500 uppercase tracking-wide">Mensagem</p>
+        <div className="space-y-2">
+          {PUSH_TEMPLATES.map((t) => (
+            <label key={t} className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="template"
+                checked={!useCustom && template === t}
+                onChange={() => { setTemplate(t); setUseCustom(false) }}
+                className="accent-indigo-500 mt-0.5"
+              />
+              <span className="text-sm text-slate-300">{t}</span>
+            </label>
+          ))}
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="template"
+              checked={useCustom}
+              onChange={() => setUseCustom(true)}
+              className="accent-indigo-500 mt-0.5"
+            />
+            <span className="text-sm text-slate-300">✏️ Mensagem personalizada</span>
+          </label>
+        </div>
+        {useCustom && (
+          <textarea
+            value={customMsg}
+            onChange={(e) => setCustomMsg(e.target.value)}
+            placeholder="Ex: Olá {nome}, sua consulta foi confirmada."
+            rows={3}
+            className="w-full rounded-lg bg-slate-800 border border-slate-700 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+          />
+        )}
+        <p className="text-xs text-slate-600">
+          Use <code className="text-slate-400">{'{nome}'}</code> para inserir o username do destinatário.
+        </p>
+      </div>
+
+      <button
+        onClick={handleSend}
+        disabled={sending || loading}
+        className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-6 py-2 text-sm font-semibold text-white transition-colors"
+      >
+        {sending ? 'Enviando…' : 'Enviar notificação'}
+      </button>
+
+      {/* Results */}
+      {results.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Resultado</p>
+          {results.map((r) => (
+            <div
+              key={r.username}
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
+                r.ok
+                  ? 'bg-green-900/20 border border-green-800/50 text-green-300'
+                  : 'bg-red-900/20 border border-red-800/50 text-red-300'
+              }`}
+            >
+              <span className="font-mono flex-1">{r.username}</span>
+              <span>{r.ok ? '✓ Enviado' : `✗ ${r.error ?? 'Erro'}`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── System tab ───────────────────────────────────────────────────────────────
 
 function SystemTab() {
@@ -575,6 +805,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Visão Geral' },
   { id: 'users', label: 'Usuários' },
   { id: 'rooms', label: 'Salas' },
+  { id: 'notifications', label: 'Notificações' },
   { id: 'settings', label: 'Configurações' },
   { id: 'system', label: 'Sistema' },
 ]
@@ -624,6 +855,7 @@ export default function AdminPage() {
         {tab === 'overview' && <OverviewTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'rooms' && <RoomsTab />}
+        {tab === 'notifications' && <NotificationsTab />}
         {tab === 'settings' && <SettingsTab />}
         {tab === 'system' && <SystemTab />}
       </div>

@@ -8,6 +8,7 @@ import type { Message, ReplyTo } from '@/lib/socket-client'
 import MessageBubble from './MessageBubble'
 import NotificationSettings from './NotificationSettings'
 import { getPrefs, playSound } from '@/lib/notification-prefs'
+import { usePushSubscription } from '@/lib/use-push-subscription'
 
 interface Props {
   roomId: string
@@ -65,6 +66,8 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     maxParticipants,
     messageTtlSeconds
   )
+
+  usePushSubscription()
 
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)

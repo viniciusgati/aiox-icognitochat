@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import type { Message } from '@/lib/socket-client'
 import { getUserColor, getUserInitials } from '@/lib/user-color'
+import WatermarkedImage from './WatermarkedImage'
 
 const EMOJI_LIST = ['👍', '❤️', '😂', '😮', '🔥', '👏'] as const
 
 interface Props {
   message: Message
+  roomId: string
   onReply?: (msg: Message) => void
   onReact?: (messageId: string, emoji: string) => void
 }
@@ -24,18 +26,24 @@ function Avatar({ username }: { username: string }) {
   )
 }
 
-function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+function ImageLightbox({
+  src, alt, username, roomId, timestamp, onClose,
+}: {
+  src: string; alt: string; username: string; roomId: string; timestamp: number; onClose: () => void
+}) {
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
       onClick={onClose}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <WatermarkedImage
         src={src}
         alt={alt}
+        username={username}
+        roomId={roomId}
+        timestamp={timestamp}
         className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => e?.stopPropagation()}
       />
       <button
         onClick={onClose}
@@ -48,7 +56,7 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
   )
 }
 
-export default function MessageBubble({ message, onReply, onReact }: Props) {
+export default function MessageBubble({ message, roomId, onReply, onReact }: Props) {
   const [lightbox, setLightbox] = useState(false)
   const time = new Date(message.timestamp).toLocaleTimeString('pt-BR', {
     hour: '2-digit',
@@ -116,12 +124,13 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
                   {message.username}
                 </p>
               )}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={message.imageSrc}
+              <WatermarkedImage
+                src={message.imageSrc!}
                 alt={`Imagem de ${message.username}`}
-                className="max-w-xs max-h-72 object-contain block cursor-zoom-in"
-                loading="lazy"
+                username={message.username}
+                roomId={roomId}
+                timestamp={message.timestamp}
+                className="max-w-xs max-h-72 object-contain block"
                 onClick={() => setLightbox(true)}
               />
               <p className={`text-[10px] px-2 py-0.5 text-right ${message.own ? 'text-white/50' : 'text-zinc-500'}`}>
@@ -191,6 +200,9 @@ export default function MessageBubble({ message, onReply, onReact }: Props) {
       <ImageLightbox
         src={message.imageSrc}
         alt={`Imagem de ${message.username}`}
+        username={message.username}
+        roomId={roomId}
+        timestamp={message.timestamp}
         onClose={() => setLightbox(false)}
       />
     )}

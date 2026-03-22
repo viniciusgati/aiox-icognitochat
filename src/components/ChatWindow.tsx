@@ -328,6 +328,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
           <MessageBubble
             key={msg.id}
             message={msg}
+            roomId={roomId}
             onReply={handleReply}
             onReact={handleReact}
           />

@@ -17,48 +17,64 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 
 export type PushStatus = 'unsupported' | 'default' | 'granted' | 'denied' | 'loading'
 
-async function saveSubscription(sub: PushSubscription) {
-  const json = sub.toJSON()
-  const keys = json.keys as { p256dh: string; auth: string }
-  await fetch('/api/push/subscribe', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      endpoint: sub.endpoint,
-      p256dh: keys.p256dh,
-      auth: keys.auth,
-    }),
-  }).catch(() => {})
-}
-
-function isPushSupported() {
+function isBrowserSupported() {
   return (
     typeof window !== 'undefined' &&
     'Notification' in window &&
     'serviceWorker' in navigator &&
-    'PushManager' in window &&
-    !!VAPID_PUBLIC_KEY
+    'PushManager' in window
   )
+}
+
+async function saveSubscription(sub: PushSubscription): Promise<string | null> {
+  const json = sub.toJSON()
+  const keys = json.keys as { p256dh: string; auth: string }
+  try {
+    const res = await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: sub.endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+      }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      return data.error ?? `Erro ${res.status} ao salvar subscription`
+    }
+    return null
+  } catch {
+    return 'Erro de rede ao salvar subscription'
+  }
 }
 
 export function usePushSubscription() {
   const [status, setStatus] = useState<PushStatus>('loading')
+  const [error, setError] = useState<string | null>(null)
 
-  // On mount: read current permission state without prompting
   useEffect(() => {
-    if (!isPushSupported()) {
+    if (!isBrowserSupported()) {
       setStatus('unsupported')
       return
     }
     const perm = Notification.permission
     if (perm === 'granted') {
-      setStatus('granted')
-      // Silently re-register existing subscription in case server lost it
-      navigator.serviceWorker.ready.then((reg) =>
-        reg.pushManager.getSubscription().then((sub) => {
-          if (sub) saveSubscription(sub)
+      // Check if we actually have a subscription — if not, don't lie about being "granted"
+      navigator.serviceWorker.ready
+        .then(async (reg) => {
+          const sub = await reg.pushManager.getSubscription()
+          if (sub) {
+            // Re-sync subscription with server (handles server data loss)
+            const err = await saveSubscription(sub)
+            if (err) setError(err)
+            setStatus('granted')
+          } else {
+            // Permission granted but no subscription yet — needs user action
+            setStatus('default')
+          }
         })
-      ).catch(() => {})
+        .catch(() => setStatus('default'))
     } else if (perm === 'denied') {
       setStatus('denied')
     } else {
@@ -66,9 +82,20 @@ export function usePushSubscription() {
     }
   }, [])
 
-  // User-triggered: ask permission and subscribe
   const requestPermission = useCallback(async (): Promise<PushStatus> => {
-    if (!isPushSupported()) return 'unsupported'
+    setError(null)
+
+    if (!isBrowserSupported()) {
+      setStatus('unsupported')
+      return 'unsupported'
+    }
+
+    if (!VAPID_PUBLIC_KEY) {
+      setError('NEXT_PUBLIC_VAPID_PUBLIC_KEY não configurada — configure nas variáveis de ambiente e faça redeploy.')
+      setStatus('default')
+      return 'default'
+    }
+
     setStatus('loading')
     try {
       const permission = await Notification.requestPermission()
@@ -76,20 +103,31 @@ export function usePushSubscription() {
         setStatus(permission as PushStatus)
         return permission as PushStatus
       }
+
       const reg = await navigator.serviceWorker.ready
       const existing = await reg.pushManager.getSubscription()
       const sub = existing ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       })
-      await saveSubscription(sub)
+
+      const saveError = await saveSubscription(sub)
+      if (saveError) {
+        setError(saveError)
+        // Still mark as granted in browser — permission was given
+        setStatus('granted')
+        return 'granted'
+      }
+
       setStatus('granted')
       return 'granted'
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao ativar push'
+      setError(msg)
       setStatus('default')
       return 'default'
     }
   }, [])
 
-  return { status, requestPermission }
+  return { status, error, requestPermission }
 }

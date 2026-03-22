@@ -7,6 +7,7 @@ import type { PushStatus } from '@/lib/use-push-subscription'
 interface Props {
   onClose: () => void
   pushStatus: PushStatus
+  pushError: string | null
   onRequestPush: () => Promise<PushStatus>
 }
 
@@ -18,7 +19,7 @@ const SOUND_OPTIONS: { value: SoundOption; label: string }[] = [
   { value: 'pop', label: 'Pop' },
 ]
 
-function PushSection({ pushStatus, onRequestPush }: { pushStatus: PushStatus; onRequestPush: () => Promise<PushStatus> }) {
+function PushSection({ pushStatus, pushError, onRequestPush }: { pushStatus: PushStatus; pushError: string | null; onRequestPush: () => Promise<PushStatus> }) {
   const [requesting, setRequesting] = useState(false)
 
   async function handleEnable() {
@@ -37,9 +38,14 @@ function PushSection({ pushStatus, onRequestPush }: { pushStatus: PushStatus; on
 
   if (pushStatus === 'granted') {
     return (
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-zinc-300">Push ativo</span>
-        <span className="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded-full">✓ ativo</span>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-zinc-300">Push ativo</span>
+          <span className="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded-full">✓ ativo</span>
+        </div>
+        {pushError && (
+          <p className="text-xs text-amber-400 bg-amber-900/20 border border-amber-700/30 rounded-lg px-2 py-1.5">{pushError}</p>
+        )}
       </div>
     )
   }
@@ -55,23 +61,28 @@ function PushSection({ pushStatus, onRequestPush }: { pushStatus: PushStatus; on
 
   // 'default' or 'loading'
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-zinc-300">Push (mesmo com app fechado)</p>
-        <p className="text-xs text-zinc-600 mt-0.5">Receba avisos do admin</p>
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-zinc-300">Push (mesmo com app fechado)</p>
+          <p className="text-xs text-zinc-600 mt-0.5">Receba avisos do admin</p>
+        </div>
+        <button
+          onClick={handleEnable}
+          disabled={requesting || pushStatus === 'loading'}
+          className="text-xs rounded-lg bg-brand-500 hover:bg-brand-400 disabled:opacity-50 px-3 py-1.5 text-white font-medium transition-colors shrink-0 ml-3"
+        >
+          {requesting ? '…' : 'Ativar'}
+        </button>
       </div>
-      <button
-        onClick={handleEnable}
-        disabled={requesting || pushStatus === 'loading'}
-        className="text-xs rounded-lg bg-brand-500 hover:bg-brand-400 disabled:opacity-50 px-3 py-1.5 text-white font-medium transition-colors shrink-0 ml-3"
-      >
-        {requesting ? '…' : 'Ativar'}
-      </button>
+      {pushError && (
+        <p className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded-lg px-2 py-1.5 break-words">{pushError}</p>
+      )}
     </div>
   )
 }
 
-export default function NotificationSettings({ onClose, pushStatus, onRequestPush }: Props) {
+export default function NotificationSettings({ onClose, pushStatus, pushError, onRequestPush }: Props) {
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => getPrefs())
 
   function updatePrefs(patch: Partial<NotificationPrefs>) {
@@ -101,7 +112,7 @@ export default function NotificationSettings({ onClose, pushStatus, onRequestPus
       {/* Push notifications */}
       <div className="space-y-2">
         <p className="text-xs text-zinc-600 uppercase tracking-wide">Push</p>
-        <PushSection pushStatus={pushStatus} onRequestPush={onRequestPush} />
+        <PushSection pushStatus={pushStatus} pushError={pushError} onRequestPush={onRequestPush} />
       </div>
 
       <div className="border-t border-white/[0.06]" />

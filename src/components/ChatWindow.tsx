@@ -67,7 +67,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
     messageTtlSeconds
   )
 
-  const { status: pushStatus, requestPermission: requestPush } = usePushSubscription()
+  const { status: pushStatus, error: pushError, requestPermission: requestPush } = usePushSubscription()
 
   const [input, setInput] = useState('')
   const [copied, setCopied] = useState(false)
@@ -247,6 +247,7 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
               <NotificationSettings
                 onClose={() => setShowNotifSettings(false)}
                 pushStatus={pushStatus}
+                pushError={pushError}
                 onRequestPush={requestPush}
               />
             )}

@@ -128,6 +128,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_admin_messages_user ON admin_messages(user_id);
 `)
 
+// Migration: remove deprecated admin_only_chat setting (replaced by allow_contact_admin in 1.39)
+db.prepare("DELETE FROM global_settings WHERE key = 'admin_only_chat'").run()
+
 // Seed default settings
 const settingsDefaults: Record<string, string> = {
   allow_room_creation: '1',

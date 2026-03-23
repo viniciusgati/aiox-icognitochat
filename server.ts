@@ -3,8 +3,10 @@ import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
 import bcrypt from 'bcryptjs'
+import { unsealData } from 'iron-session'
 import db, { deleteRoom, cleanOrphanedEphemeralRooms, deleteExpiredMessages, deleteExpiredImages } from '@/lib/db'
 import logger from '@/lib/logger'
+import { sessionOptions, SessionData } from '@/lib/session'
 
 // Bootstrap admin user from env vars (runs once on startup)
 const adminUsername = process.env.ADMIN_USERNAME
@@ -51,6 +53,26 @@ app.prepare().then(() => {
 
   // Store io instance globally so API routes can access it
   ;(global as any).io = io
+
+  // Socket.IO auth middleware — reads iron-session cookie to populate socket.data
+  const COOKIE_NAME = sessionOptions.cookieName
+  const SESSION_SECRET = sessionOptions.password as string
+  io.use(async (socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie ?? ''
+      const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${COOKIE_NAME}=([^;]+)`))
+      if (match) {
+        const sealed = decodeURIComponent(match[1])
+        const session = await unsealData<SessionData>(sealed, { password: SESSION_SECRET })
+        socket.data.userId = session.userId
+        socket.data.username = session.username
+        socket.data.isAdmin = session.isAdmin === true
+      }
+    } catch {
+      // Session parse failure is non-fatal — socket remains unauthenticated
+    }
+    next()
+  })
 
   // Presence tracking: roomId → Map<socketId, username>
   const roomUsers = new Map<string, Map<string, string>>()
@@ -127,9 +149,8 @@ app.prepare().then(() => {
         if (!userSockets.has(username)) userSockets.set(username, new Set())
         userSockets.get(username)!.add(socket.id)
 
-        // Auto-join admin notification room (server-verified — not trusting client)
-        const adminRow = db.prepare('SELECT is_admin FROM users WHERE username = ?').get(username) as { is_admin: number } | undefined
-        if (adminRow?.is_admin) socket.join('admin')
+        // Auto-join admin notification room — uses session data verified at handshake, never trusts client payload
+        if (socket.data.isAdmin === true) socket.join('admin')
         if (ephemeral) ephemeralRooms.add(roomId)
 
         // First to join an ephemeral room becomes owner

@@ -1,28 +1,6 @@
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
-export async function deriveRoomKey(roomId: string): Promise<CryptoKey> {
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    ENC.encode(roomId),
-    'PBKDF2',
-    false,
-    ['deriveKey']
-  )
-  return crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: ENC.encode('icognito-v1'),
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  )
-}
-
 export async function encryptMessage(
   key: CryptoKey,
   plaintext: string

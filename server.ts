@@ -89,6 +89,8 @@ app.prepare().then(() => {
   const roomMaxParticipants = new Map<string, number>()
   // Sales rooms that have already triggered admin notification (in-memory)
   const salesNotified = new Set<string>()
+  // ECDH key exchange: roomId → Map<socketId, pubKey(base64)>
+  const roomPubKeys = new Map<string, Map<string, string>>()
 
   function handleRoomEmpty(roomId: string) {
     if (ephemeralRooms.has(roomId)) {
@@ -170,12 +172,49 @@ app.prepare().then(() => {
     socket.on('leave-room', (roomId: string) => {
       socket.leave(roomId)
       roomUsers.get(roomId)?.delete(socket.id)
+      roomPubKeys.get(roomId)?.delete(socket.id)
       promoteNewOwner(roomId, socket.id)
       const count = roomUsers.get(roomId)?.size ?? 0
       io.to(roomId).emit('room-users', count)
       io.to(roomId).emit('room-users-list', Array.from(roomUsers.get(roomId)?.values() ?? []))
       if (count === 0) handleRoomEmpty(roomId)
     })
+
+    // ECDH key exchange: client announces its public key when joining a room
+    socket.on('key-exchange', ({ roomId, pubKey }: { roomId: string; pubKey: string }) => {
+      if (!roomPubKeys.has(roomId)) roomPubKeys.set(roomId, new Map())
+      const roomKeys = roomPubKeys.get(roomId)!
+
+      // Send existing peers' pubKeys to the new joiner
+      roomKeys.forEach((existingPubKey, existingSocketId) => {
+        socket.emit('peer-pubkey', { socketId: existingSocketId, pubKey: existingPubKey })
+      })
+
+      // Register this socket's pubKey
+      roomKeys.set(socket.id, pubKey)
+
+      // Announce new joiner's pubKey to all existing peers
+      socket.to(roomId).emit('peer-pubkey', { socketId: socket.id, pubKey })
+    })
+
+    // Relay encrypted room key envelope to the target socket (never read by server)
+    socket.on(
+      'room-key-offer',
+      ({
+        targetSocketId,
+        encryptedRoomKey,
+        iv,
+        senderPubKey,
+      }: {
+        roomId: string
+        targetSocketId: string
+        encryptedRoomKey: string
+        iv: string
+        senderPubKey: string
+      }) => {
+        io.to(targetSocketId).emit('room-key-offer', { encryptedRoomKey, iv, senderPubKey })
+      }
+    )
 
     socket.on(
       'kick-user',
@@ -357,6 +396,7 @@ app.prepare().then(() => {
       roomUsers.forEach((users, roomId) => {
         if (users.has(socket.id)) {
           users.delete(socket.id)
+          roomPubKeys.get(roomId)?.delete(socket.id)
           promoteNewOwner(roomId, socket.id)
           io.to(roomId).emit('room-users', users.size)
           io.to(roomId).emit('room-users-list', Array.from(users.values()))

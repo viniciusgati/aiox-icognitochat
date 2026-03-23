@@ -2,8 +2,19 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
-import { deriveRoomKey, encryptMessage, decryptMessage, encryptBinary, decryptBinary } from './crypto'
+import { encryptMessage, decryptMessage, encryptBinary, decryptBinary } from './crypto'
 import { clearCryptoKey, zeroizeMessages } from './secure-cleanup'
+import {
+  generateSessionKeypair,
+  exportPubKey,
+  importPubKey,
+  deriveSharedKey,
+  generateRoomKey,
+  exportRoomKey,
+  importRoomKey,
+  encryptRoomKeyEnvelope,
+  decryptRoomKeyEnvelope,
+} from './ecdh'
 
 export interface ReplyTo {
   id: string
@@ -38,7 +49,18 @@ export function useSocket(
   onScreenShareKick?: (kickedUsername: string) => void
 ) {
   const socketRef = useRef<Socket | null>(null)
-  const keyRef = useRef<CryptoKey | null>(null)
+  // ECDH: session keypair (private key never leaves memory)
+  const keypairRef = useRef<CryptoKeyPair | null>(null)
+  const pubKeyB64Ref = useRef<string>('')
+  // Room key negotiated via ECDH (replaces the old PBKDF2-derived key)
+  const roomKeyRef = useRef<CryptoKey | null>(null)
+  // Peers we know about but haven't sent a room-key-offer to yet
+  const pendingPeersRef = useRef<Map<string, string>>(new Map()) // socketId → pubKey(b64)
+  // Messages queued while roomKey is not yet established
+  const pendingMessagesRef = useRef<Array<() => Promise<void>>>([])
+  // Timer for fallback: generate own roomKey if no offer arrives within 5s
+  const keyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const messagesRef = useRef<Message[]>([])
   const onKickedRef = useRef(onKicked)
   const onRoomClosedRef = useRef(onRoomClosed)
@@ -96,8 +118,50 @@ export function useSocket(
     const timers = ttlTimers.current
     const urls = blobUrls.current
 
+    /**
+     * Called once the room key is established (either generated or received).
+     * Distributes key offers to pending peers and flushes queued messages.
+     */
+    async function onRoomKeyEstablished(roomKey: CryptoKey) {
+      if (keyTimeoutRef.current) {
+        clearTimeout(keyTimeoutRef.current)
+        keyTimeoutRef.current = null
+      }
+      roomKeyRef.current = roomKey
+
+      // Send room key offer to all peers that joined before us or while we had no key
+      const peers = pendingPeersRef.current
+      if (peers.size > 0 && keypairRef.current) {
+        const roomKeyRaw = await exportRoomKey(roomKey)
+        for (const [targetSocketId, peerPubKeyB64] of peers) {
+          try {
+            const peerPubKey = await importPubKey(peerPubKeyB64)
+            const sharedKey = await deriveSharedKey(keypairRef.current.privateKey, peerPubKey)
+            const envelope = await encryptRoomKeyEnvelope(sharedKey, roomKeyRaw)
+            socket?.emit('room-key-offer', {
+              roomId,
+              targetSocketId,
+              ...envelope,
+              senderPubKey: pubKeyB64Ref.current,
+            })
+          } catch {
+            // Best-effort — peer may have disconnected
+          }
+        }
+        peers.clear()
+      }
+
+      // Flush messages queued before key was ready
+      const pending = pendingMessagesRef.current.splice(0)
+      for (const fn of pending) {
+        await fn()
+      }
+    }
+
     async function init() {
-      keyRef.current = await deriveRoomKey(roomId)
+      // Generate session keypair once (in-memory, private key never extracted)
+      keypairRef.current = await generateSessionKeypair()
+      pubKeyB64Ref.current = await exportPubKey(keypairRef.current.publicKey)
 
       socket = io({ path: '/socket.io' })
       socketRef.current = socket
@@ -105,7 +169,70 @@ export function useSocket(
       socket.on('connect', () => {
         setConnected(true)
         socket.emit('join-room', { roomId, username, ephemeral, maxParticipants })
+        // Announce our public key to the room for ECDH key exchange
+        socket.emit('key-exchange', { roomId, pubKey: pubKeyB64Ref.current })
+
+        // Fallback: if no room-key-offer arrives within 5s (alone in room), generate our own key
+        keyTimeoutRef.current = setTimeout(async () => {
+          if (!roomKeyRef.current) {
+            const roomKey = await generateRoomKey()
+            await onRoomKeyEstablished(roomKey)
+          }
+        }, 5000)
       })
+
+      // A peer's public key arrived — we need to send them the room key (if we have it)
+      // or remember them for when we do
+      socket.on('peer-pubkey', async ({ socketId, pubKey }: { socketId: string; pubKey: string }) => {
+        if (!keypairRef.current) return
+
+        if (roomKeyRef.current) {
+          // We already have the room key — send it to the new peer immediately
+          try {
+            const roomKeyRaw = await exportRoomKey(roomKeyRef.current)
+            const peerPubKey = await importPubKey(pubKey)
+            const sharedKey = await deriveSharedKey(keypairRef.current.privateKey, peerPubKey)
+            const envelope = await encryptRoomKeyEnvelope(sharedKey, roomKeyRaw)
+            socket.emit('room-key-offer', {
+              roomId,
+              targetSocketId: socketId,
+              ...envelope,
+              senderPubKey: pubKeyB64Ref.current,
+            })
+          } catch {
+            // Best-effort
+          }
+        } else {
+          // We don't have the room key yet — remember this peer for later
+          pendingPeersRef.current.set(socketId, pubKey)
+        }
+      })
+
+      // A peer sent us an encrypted room key envelope
+      socket.on(
+        'room-key-offer',
+        async ({
+          encryptedRoomKey,
+          iv,
+          senderPubKey,
+        }: {
+          encryptedRoomKey: string
+          iv: string
+          senderPubKey: string
+        }) => {
+          if (roomKeyRef.current) return // already have key — ignore duplicate offers
+          if (!keypairRef.current) return
+          try {
+            const senderKey = await importPubKey(senderPubKey)
+            const sharedKey = await deriveSharedKey(keypairRef.current.privateKey, senderKey)
+            const roomKeyRaw = await decryptRoomKeyEnvelope(sharedKey, encryptedRoomKey, iv)
+            const roomKey = await importRoomKey(roomKeyRaw)
+            await onRoomKeyEstablished(roomKey)
+          } catch {
+            // Corrupted envelope — ignore
+          }
+        }
+      )
 
       socket.on('room-users', (count: number) => {
         setOnlineCount(count)
@@ -177,10 +304,10 @@ export function useSocket(
           msgId: string
           replyTo?: ReplyTo
         }) => {
-          if (!keyRef.current) return
+          if (!roomKeyRef.current) return
           try {
             const content = await decryptMessage(
-              keyRef.current,
+              roomKeyRef.current,
               data.ciphertext,
               data.iv
             )
@@ -233,13 +360,13 @@ export function useSocket(
           timestamp: number
           msgId: string
         }) => {
-          if (!keyRef.current) return
+          if (!roomKeyRef.current) return
           if (messageTtlSeconds && Date.now() - data.timestamp >= messageTtlSeconds * 1000) return
           try {
             const res = await fetch(`/api/rooms/${roomId}/images/${data.imageId}`)
             if (!res.ok) return
             const encrypted = await res.arrayBuffer()
-            const plain = await decryptBinary(keyRef.current, encrypted, data.iv)
+            const plain = await decryptBinary(roomKeyRef.current, encrypted, data.iv)
             const blob = new Blob([plain], { type: 'image/webp' })
             const imageSrc = URL.createObjectURL(blob)
             urls.push(imageSrc)
@@ -271,6 +398,7 @@ export function useSocket(
     init()
 
     return () => {
+      if (keyTimeoutRef.current) clearTimeout(keyTimeoutRef.current)
       if (typingDebounce.current) clearTimeout(typingDebounce.current)
       timeouts.forEach((t) => clearTimeout(t))
       timeouts.clear()
@@ -286,40 +414,53 @@ export function useSocket(
   /** Zeroize sensitive data from memory (best-effort). */
   const cleanup = useCallback(() => {
     zeroizeMessages(messagesRef.current)
-    clearCryptoKey(keyRef)
+    clearCryptoKey(roomKeyRef)
+    keypairRef.current = null
     setMessages([])
     messagesRef.current = []
   }, [])
 
   const sendMessage = useCallback(
     async (plaintext: string, replyTo?: ReplyTo) => {
-      if (!socketRef.current || !keyRef.current) return
-      const { ciphertext, iv } = await encryptMessage(keyRef.current, plaintext)
-      const timestamp = Date.now()
-      const msgId = `${timestamp}-${username}-${Math.random().toString(36).slice(2)}`
-      socketRef.current.emit('send-message', {
-        roomId,
-        ciphertext,
-        iv,
-        username,
-        timestamp,
-        msgId,
-        replyTo,
-      })
-      const ownMsg: Message = {
-        id: msgId,
-        username,
-        content: plaintext,
-        timestamp,
-        own: true,
-        replyTo,
+      if (!socketRef.current) return
+
+      const doSend = async () => {
+        if (!socketRef.current || !roomKeyRef.current) return
+        const { ciphertext, iv } = await encryptMessage(roomKeyRef.current, plaintext)
+        const timestamp = Date.now()
+        const msgId = `${timestamp}-${username}-${Math.random().toString(36).slice(2)}`
+        socketRef.current.emit('send-message', {
+          roomId,
+          ciphertext,
+          iv,
+          username,
+          timestamp,
+          msgId,
+          replyTo,
+        })
+        const ownMsg: Message = {
+          id: msgId,
+          username,
+          content: plaintext,
+          timestamp,
+          own: true,
+          replyTo,
+        }
+        setMessages((prev) => {
+          const next = [...prev, ownMsg]
+          messagesRef.current = next
+          return next
+        })
+        scheduleExpiry(msgId, timestamp)
       }
-      setMessages((prev) => {
-        const next = [...prev, ownMsg]
-        messagesRef.current = next
-        return next
-      })
-      scheduleExpiry(msgId, timestamp)
+
+      if (!roomKeyRef.current) {
+        // Queue until room key is established
+        pendingMessagesRef.current.push(doSend)
+        return
+      }
+
+      await doSend()
     },
     [roomId, username, scheduleExpiry]
   )
@@ -375,7 +516,7 @@ export function useSocket(
 
   const sendImage = useCallback(
     async (file: File): Promise<{ error?: string }> => {
-      if (!socketRef.current || !keyRef.current) return { error: 'Não conectado' }
+      if (!socketRef.current || !roomKeyRef.current) return { error: 'Não conectado' }
 
       // Convert to WebP with max 1920px dimension
       let webpBlob: Blob
@@ -400,7 +541,7 @@ export function useSocket(
       }
 
       // Encrypt before upload
-      const { ciphertext, iv } = await encryptBinary(keyRef.current, await webpBlob.arrayBuffer())
+      const { ciphertext, iv } = await encryptBinary(roomKeyRef.current, await webpBlob.arrayBuffer())
 
       // Upload encrypted blob
       const res = await fetch(`/api/rooms/${roomId}/images`, {

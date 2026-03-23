@@ -4,7 +4,7 @@ import { getIronSession } from 'iron-session'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { sessionOptions, SessionData } from '@/lib/session'
-import db, { getSetting } from '@/lib/db'
+import db, { getSetting, wasEphemeralRoom } from '@/lib/db'
 import ChatWindow from '@/components/ChatWindow'
 
 interface Props {
@@ -45,7 +45,8 @@ export default async function RoomPage({ params, searchParams }: Props) {
     } | undefined
 
   if (!room) {
-    redirect('/chat?reason=not-found')
+    const reason = wasEphemeralRoom(roomId) ? 'ephemeral-closed' : 'not-found'
+    redirect(`/chat?reason=${reason}`)
   }
 
   // Private room access: admin bypasses; non-admin only accesses their own private room

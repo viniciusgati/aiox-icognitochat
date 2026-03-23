@@ -544,6 +544,8 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 86400)}d atrás`
 }
 
+const MESSAGES_PER_PAGE = 20
+
 function MessagesTab({
   onReply,
 }: {
@@ -555,16 +557,19 @@ function MessagesTab({
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (p: number) => {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/auth/admin/messages')
+      const res = await fetch(`/api/auth/admin/messages?page=${p}`)
       if (!res.ok) { setError('Erro ao carregar mensagens'); return }
       const data = await res.json()
       setMessages(data.messages)
       setUnread(data.unread)
+      setHasMore(data.messages.length === MESSAGES_PER_PAGE)
     } catch {
       setError('Erro de conexão')
     } finally {
@@ -572,7 +577,7 @@ function MessagesTab({
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(page) }, [load, page])
 
   async function handleExpand(msg: AdminMessage) {
     setExpanded((prev) => (prev === msg.id ? null : msg.id))
@@ -591,10 +596,22 @@ function MessagesTab({
     setMarkingAll(false)
   }
 
+  function handlePrev() {
+    const prev = Math.max(1, page - 1)
+    setPage(prev)
+    setExpanded(null)
+  }
+
+  function handleNext() {
+    const next = page + 1
+    setPage(next)
+    setExpanded(null)
+  }
+
   return (
     <div className="space-y-4 max-w-2xl">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-400">{messages.length} mensagem(ns)</span>
+        <span className="text-sm text-slate-400">{messages.length} mensagem(ns) — página {page}</span>
         <div className="flex gap-3">
           {unread > 0 && (
             <button
@@ -605,7 +622,7 @@ function MessagesTab({
               Marcar todas como lidas
             </button>
           )}
-          <button onClick={load} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+          <button onClick={() => load(page)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
             ↺ Atualizar
           </button>
         </div>
@@ -618,53 +635,74 @@ function MessagesTab({
       ) : messages.length === 0 ? (
         <p className="text-slate-500 text-sm py-12 text-center">Nenhuma mensagem recebida</p>
       ) : (
-        <div className="space-y-2">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`rounded-xl border transition-colors ${
-                msg.read
-                  ? 'bg-slate-900 border-slate-700'
-                  : 'bg-slate-800/60 border-indigo-800/50'
-              }`}
-            >
-              <button
-                className="w-full text-left px-4 py-3 flex items-start gap-3"
-                onClick={() => handleExpand(msg)}
+        <>
+          <div className="space-y-2">
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`rounded-xl border transition-colors ${
+                  msg.read
+                    ? 'bg-slate-900 border-slate-700'
+                    : 'bg-slate-800/60 border-indigo-800/50'
+                }`}
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-sm font-mono text-slate-200">{msg.username}</span>
-                    {!msg.read && (
-                      <span className="text-[10px] font-medium bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">
-                        Novo
-                      </span>
-                    )}
-                    <span className="text-xs text-slate-600 ml-auto shrink-0">{timeAgo(msg.created_at)}</span>
+                <button
+                  className="w-full text-left px-4 py-3 flex items-start gap-3"
+                  onClick={() => handleExpand(msg)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-mono text-slate-200">{msg.username}</span>
+                      {!msg.read && (
+                        <span className="text-[10px] font-medium bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">
+                          Novo
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-600 ml-auto shrink-0">{timeAgo(msg.created_at)}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 truncate">
+                      {msg.message.slice(0, 80)}{msg.message.length > 80 ? '…' : ''}
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-400 truncate">
-                    {msg.message.slice(0, 80)}{msg.message.length > 80 ? '…' : ''}
-                  </p>
-                </div>
-                <span className="text-slate-600 text-xs mt-0.5">{expanded === msg.id ? '▲' : '▼'}</span>
-              </button>
+                  <span className="text-slate-600 text-xs mt-0.5">{expanded === msg.id ? '▲' : '▼'}</span>
+                </button>
 
-              {expanded === msg.id && (
-                <div className="px-4 pb-4 space-y-3 border-t border-slate-700/50 pt-3">
-                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{msg.message}</p>
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => onReply(msg.user_id, msg.username)}
-                      className="text-xs rounded-lg px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white transition-colors font-medium"
-                    >
-                      ↩ Responder via Push
-                    </button>
+                {expanded === msg.id && (
+                  <div className="px-4 pb-4 space-y-3 border-t border-slate-700/50 pt-3">
+                    <p className="text-sm text-slate-200 whitespace-pre-wrap">{msg.message}</p>
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => onReply(msg.user_id, msg.username)}
+                        className="text-xs rounded-lg px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white transition-colors font-medium"
+                      >
+                        ↩ Responder via Push
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
+            ))}
+          </div>
+          {(page > 1 || hasMore) && (
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={handlePrev}
+                disabled={page <= 1 || loading}
+                className="text-xs text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-30"
+              >
+                &larr; Anterior
+              </button>
+              <span className="text-xs text-slate-600">Página {page}</span>
+              <button
+                onClick={handleNext}
+                disabled={!hasMore || loading}
+                className="text-xs text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-30"
+              >
+                Próxima &rarr;
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )

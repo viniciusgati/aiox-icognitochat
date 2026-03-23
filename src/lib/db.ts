@@ -107,6 +107,14 @@ db.exec(`
   );
 `)
 
+// Migration: closed_ephemeral_rooms — tracks slugs of ephemeral rooms that were closed
+db.exec(`
+  CREATE TABLE IF NOT EXISTS closed_ephemeral_rooms (
+    slug TEXT PRIMARY KEY,
+    closed_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+`)
+
 // Migration: add admin_messages table if not present
 db.exec(`
   CREATE TABLE IF NOT EXISTS admin_messages (
@@ -168,8 +176,18 @@ export function deleteRoomImages(slug: string): number {
   return deleted
 }
 
+/** Returns true if the slug belonged to an ephemeral room that was closed. */
+export function wasEphemeralRoom(slug: string): boolean {
+  const row = db.prepare('SELECT 1 FROM closed_ephemeral_rooms WHERE slug = ?').get(slug)
+  return !!row
+}
+
 /** Delete an ephemeral room from the database by slug (also cleans image files). */
 export function deleteRoom(slug: string): void {
+  const room = db.prepare('SELECT is_ephemeral FROM rooms WHERE slug = ?').get(slug) as { is_ephemeral: number } | undefined
+  if (room?.is_ephemeral === 1) {
+    db.prepare('INSERT OR IGNORE INTO closed_ephemeral_rooms (slug, closed_at) VALUES (?, unixepoch())').run(slug)
+  }
   deleteRoomImages(slug)
   db.prepare('DELETE FROM rooms WHERE slug = ?').run(slug)
 }

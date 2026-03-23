@@ -41,9 +41,11 @@ function RoomSkeleton() {
 export default function RoomList({
   username,
   isAdmin = false,
+  allowContactAdmin = true,
 }: {
   username: string
   isAdmin?: boolean
+  allowContactAdmin?: boolean
 }) {
   const router = useRouter()
   const [rooms, setRooms] = useState<Room[]>([])
@@ -91,6 +93,10 @@ export default function RoomList({
     const reason = params.get('reason')
     if (reason === 'not-found') {
       setRedirectToast('Sala não encontrada ou já foi encerrada')
+      setTimeout(() => setRedirectToast(null), 5000)
+      history.replaceState(null, '', window.location.pathname)
+    } else if (reason === 'ephemeral-closed') {
+      setRedirectToast('Esta sala efêmera foi encerrada')
       setTimeout(() => setRedirectToast(null), 5000)
       history.replaceState(null, '', window.location.pathname)
     }
@@ -149,7 +155,7 @@ export default function RoomList({
               )}
             </a>
           )}
-          {!isAdmin && (
+          {!isAdmin && allowContactAdmin && (
             <button
               onClick={handleSupportClick}
               className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors px-2 py-1 rounded-lg hover:bg-surface-700"

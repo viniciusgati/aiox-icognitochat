@@ -56,10 +56,6 @@ export async function POST(req: NextRequest) {
     if (allowRoomCreation !== '1') {
       return NextResponse.json({ error: 'Criação de salas desativada pelo administrador' }, { status: 403 })
     }
-    const adminOnlyChat = getSetting('admin_only_chat') ?? '0'
-    if (adminOnlyChat === '1') {
-      return NextResponse.json({ error: 'Apenas o administrador pode criar salas neste modo' }, { status: 403 })
-    }
   }
 
   const body = await req.json()

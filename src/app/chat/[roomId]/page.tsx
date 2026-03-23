@@ -4,12 +4,12 @@ import { getIronSession } from 'iron-session'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { sessionOptions, SessionData } from '@/lib/session'
-import db, { getSetting, wasEphemeralRoom } from '@/lib/db'
+import db, { wasEphemeralRoom } from '@/lib/db'
 import ChatWindow from '@/components/ChatWindow'
 
 interface Props {
   params: Promise<{ roomId: string }>
-  searchParams: Promise<{ max?: string; reason?: string }>
+  searchParams: Promise<{ max?: string }>
 }
 
 export default async function RoomPage({ params, searchParams }: Props) {
@@ -20,17 +20,7 @@ export default async function RoomPage({ params, searchParams }: Props) {
   }
 
   const { roomId } = await params
-  const { max, reason } = await searchParams
-
-  // admin_only_chat: non-admins can only access 'general' and their own vendas room (1.38)
-  if (
-    !session.isAdmin &&
-    getSetting('admin_only_chat') === '1' &&
-    roomId !== 'general' &&
-    !roomId.startsWith('vendas-')
-  ) {
-    redirect('/chat/general?reason=restricted')
-  }
+  const { max } = await searchParams
 
   const maxParticipants = max ? parseInt(max, 10) : undefined
 
@@ -54,8 +44,6 @@ export default async function RoomPage({ params, searchParams }: Props) {
     redirect('/chat')
   }
 
-  const restrictedRedirect = reason === 'restricted'
-
   return (
     <ChatWindow
       roomId={roomId}
@@ -64,7 +52,6 @@ export default async function RoomPage({ params, searchParams }: Props) {
       isEphemeral={room.is_ephemeral === 1}
       maxParticipants={maxParticipants}
       messageTtlSeconds={room.message_ttl_seconds ?? undefined}
-      restrictedRedirect={restrictedRedirect}
     />
   )
 }

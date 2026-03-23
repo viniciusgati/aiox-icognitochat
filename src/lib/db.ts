@@ -131,7 +131,6 @@ db.exec(`
 // Seed default settings
 const settingsDefaults: Record<string, string> = {
   allow_room_creation: '1',
-  admin_only_chat: '0',
   allow_contact_admin: '1',
 }
 for (const [key, value] of Object.entries(settingsDefaults)) {

@@ -38,7 +38,6 @@ interface Stats {
 
 interface Settings {
   allow_room_creation: string
-  admin_only_chat: string
   allow_contact_admin: string
 }
 
@@ -467,31 +466,6 @@ function SettingsTab() {
             <span
               className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
                 settings.allow_room_creation === '1' ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </label>
-
-        {/* admin_only_chat */}
-        <label className="flex items-start gap-4 p-4 rounded-xl bg-slate-800 border border-slate-700 cursor-pointer">
-          <div className="flex-1">
-            <p className="text-sm font-medium text-slate-200">Modo suporte — usuários só falam com o admin</p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Quando ativado, usuários não-admin só podem acessar a sala Geral.
-              Impede conversas entre usuários.
-            </p>
-          </div>
-          <button
-            role="switch"
-            aria-checked={settings.admin_only_chat === '1'}
-            onClick={() => setSettings(s => s ? { ...s, admin_only_chat: s.admin_only_chat === '1' ? '0' : '1' } : s)}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-              settings.admin_only_chat === '1' ? 'bg-indigo-600' : 'bg-slate-600'
-            }`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
-                settings.admin_only_chat === '1' ? 'translate-x-5' : 'translate-x-0'
               }`}
             />
           </button>

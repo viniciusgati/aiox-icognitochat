@@ -126,6 +126,10 @@ app.prepare().then(() => {
         roomUsers.get(roomId)!.set(socket.id, username)
         if (!userSockets.has(username)) userSockets.set(username, new Set())
         userSockets.get(username)!.add(socket.id)
+
+        // Auto-join admin notification room (server-verified — not trusting client)
+        const adminRow = db.prepare('SELECT is_admin FROM users WHERE username = ?').get(username) as { is_admin: number } | undefined
+        if (adminRow?.is_admin) socket.join('admin')
         if (ephemeral) ephemeralRooms.add(roomId)
 
         // First to join an ephemeral room becomes owner
@@ -245,7 +249,7 @@ app.prepare().then(() => {
         if (data.roomId.startsWith('vendas-') && !salesNotified.has(data.roomId)) {
           salesNotified.add(data.roomId)
           const preview = `Nova mensagem de ${data.username}`
-          io.emit('admin:sales-message', {
+          io.to('admin').emit('admin:sales-message', {
             roomId: data.roomId,
             username: data.username,
             preview,

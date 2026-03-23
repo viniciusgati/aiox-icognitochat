@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   const io = (global as any).io
   if (io) {
     const preview = message.trim().slice(0, 80)
-    io.emit('admin:new-message', {
+    io.to('admin').emit('admin:new-message', {
       id,
       username: session.username,
       preview,

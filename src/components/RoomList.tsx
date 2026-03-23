@@ -41,11 +41,9 @@ function RoomSkeleton() {
 export default function RoomList({
   username,
   isAdmin = false,
-  allowContactAdmin = true,
 }: {
   username: string
   isAdmin?: boolean
-  allowContactAdmin?: boolean
 }) {
   const router = useRouter()
   const [rooms, setRooms] = useState<Room[]>([])
@@ -54,6 +52,7 @@ export default function RoomList({
   const [showContactModal, setShowContactModal] = useState(false)
   const [contactSentToast, setContactSentToast] = useState(false)
   const [redirectToast, setRedirectToast] = useState<string | null>(null)
+  const [adminUnread, setAdminUnread] = useState(0)
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -70,6 +69,22 @@ export default function RoomList({
   useEffect(() => {
     fetchRooms()
   }, [fetchRooms])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    async function fetchUnread() {
+      try {
+        const res = await fetch('/api/auth/admin/messages')
+        if (res.ok) {
+          const data = await res.json()
+          setAdminUnread(data.unread ?? 0)
+        }
+      } catch { /* ignore */ }
+    }
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 30_000)
+    return () => clearInterval(interval)
+  }, [isAdmin])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -124,9 +139,14 @@ export default function RoomList({
           {isAdmin && (
             <a
               href="/admin"
-              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-900/30 font-medium"
+              className="relative text-xs text-indigo-400 hover:text-indigo-300 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-900/30 font-medium"
             >
               ⚙️ Admin
+              {adminUnread > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">
+                  {adminUnread > 99 ? '99+' : adminUnread}
+                </span>
+              )}
             </a>
           )}
           {!isAdmin && (

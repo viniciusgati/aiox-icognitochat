@@ -133,7 +133,7 @@ export function useSocket(
       const peers = pendingPeersRef.current
       if (peers.size > 0 && keypairRef.current) {
         const roomKeyRaw = await exportRoomKey(roomKey)
-        for (const [targetSocketId, peerPubKeyB64] of peers) {
+        for (const [targetSocketId, peerPubKeyB64] of Array.from(peers)) {
           try {
             const peerPubKey = await importPubKey(peerPubKeyB64)
             const sharedKey = await deriveSharedKey(keypairRef.current.privateKey, peerPubKey)
@@ -205,6 +205,11 @@ export function useSocket(
         } else {
           // We don't have the room key yet — remember this peer for later
           pendingPeersRef.current.set(socketId, pubKey)
+          // A peer is present who will send us a room-key-offer — cancel the solo fallback timer
+          if (keyTimeoutRef.current) {
+            clearTimeout(keyTimeoutRef.current)
+            keyTimeoutRef.current = null
+          }
         }
       })
 
@@ -516,9 +521,9 @@ export function useSocket(
 
   const sendImage = useCallback(
     async (file: File): Promise<{ error?: string }> => {
-      if (!socketRef.current || !roomKeyRef.current) return { error: 'Não conectado' }
+      if (!socketRef.current) return { error: 'Não conectado' }
 
-      // Convert to WebP with max 1920px dimension
+      // Convert to WebP immediately — doesn't require roomKey
       let webpBlob: Blob
       try {
         const bitmap = await createImageBitmap(file)
@@ -540,45 +545,36 @@ export function useSocket(
         return { error: 'Erro ao processar imagem' }
       }
 
-      // Encrypt before upload
-      const { ciphertext, iv } = await encryptBinary(roomKeyRef.current, await webpBlob.arrayBuffer())
-
-      // Upload encrypted blob
-      const res = await fetch(`/api/rooms/${roomId}/images`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: ciphertext,
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        return { error: (data as { error?: string }).error ?? 'Erro ao enviar imagem' }
+      // Encrypt, upload and emit — requires roomKey; queued if not yet available
+      const doSend = async () => {
+        if (!socketRef.current || !roomKeyRef.current) return
+        const { ciphertext, iv } = await encryptBinary(roomKeyRef.current, await webpBlob.arrayBuffer())
+        const res = await fetch(`/api/rooms/${roomId}/images`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: ciphertext,
+        })
+        if (!res.ok) return
+        const { imageId } = (await res.json()) as { imageId: string }
+        const timestamp = Date.now()
+        const msgId = `${timestamp}-${username}-${Math.random().toString(36).slice(2)}`
+        socketRef.current.emit('send-image', { roomId, imageId, iv, username, timestamp, msgId })
+        const imageSrc = URL.createObjectURL(webpBlob)
+        blobUrls.current.push(imageSrc)
+        setMessages((prev) => {
+          const next = [...prev, { id: msgId, username, content: '', timestamp, own: true, imageSrc }]
+          messagesRef.current = next
+          return next
+        })
+        scheduleExpiry(msgId, timestamp)
       }
 
-      const { imageId } = (await res.json()) as { imageId: string }
-      const timestamp = Date.now()
-      const msgId = `${timestamp}-${username}-${Math.random().toString(36).slice(2)}`
-
-      socketRef.current.emit('send-image', { roomId, imageId, iv, username, timestamp, msgId })
-
-      // Show own image immediately using the plaintext blob
-      const imageSrc = URL.createObjectURL(webpBlob)
-      blobUrls.current.push(imageSrc)
-      const ownMsg: Message = {
-        id: msgId,
-        username,
-        content: '',
-        timestamp,
-        own: true,
-        imageSrc,
+      if (!roomKeyRef.current) {
+        pendingMessagesRef.current.push(doSend)
+        return {}
       }
-      setMessages((prev) => {
-        const next = [...prev, ownMsg]
-        messagesRef.current = next
-        return next
-      })
-      scheduleExpiry(msgId, timestamp)
 
+      await doSend()
       return {}
     },
     [roomId, username, scheduleExpiry]

@@ -8,7 +8,7 @@
 
 /** Generate an X25519 keypair for this session. Private key is non-extractable. */
 export async function generateSessionKeypair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveKey'])
+  return crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveKey']) as Promise<CryptoKeyPair>
 }
 
 // ─── Public key serialization ─────────────────────────────────────────────────
@@ -84,7 +84,7 @@ export async function decryptRoomKeyEnvelope(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function arrayBufferToBase64(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+  return btoa(Array.from(new Uint8Array(buf), (b) => String.fromCharCode(b)).join(''))
 }
 
 export function base64ToArrayBuffer(b64: string): ArrayBuffer {

@@ -267,6 +267,7 @@ app.prepare().then(() => {
       roomUsers.delete(roomId)
       ephemeralRooms.delete(roomId)
       roomMaxParticipants.delete(roomId)
+      roomPubKeys.delete(roomId)
       logger.info({ roomId }, 'Ephemeral room closed by owner')
     })
 

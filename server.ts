@@ -65,6 +65,8 @@ app.prepare().then(() => {
   const messageReactions = new Map<string, Map<string, Set<string>>>()
   // Max participants per room: roomId → maxParticipants
   const roomMaxParticipants = new Map<string, number>()
+  // Sales rooms that have already triggered admin notification (in-memory)
+  const salesNotified = new Set<string>()
 
   function handleRoomEmpty(roomId: string) {
     if (ephemeralRooms.has(roomId)) {
@@ -220,7 +222,7 @@ app.prepare().then(() => {
 
     socket.on(
       'send-message',
-      (data: {
+      async (data: {
         roomId: string
         ciphertext: string
         iv: string
@@ -238,6 +240,37 @@ app.prepare().then(() => {
           msgId: data.msgId,
           replyTo: data.replyTo,
         })
+
+        // Notify admin when a message arrives in a vendas-* room
+        if (data.roomId.startsWith('vendas-') && !salesNotified.has(data.roomId)) {
+          salesNotified.add(data.roomId)
+          const preview = `Nova mensagem de ${data.username}`
+          io.emit('admin:sales-message', {
+            roomId: data.roomId,
+            username: data.username,
+            preview,
+          })
+          // Send push notification to admin users (best-effort)
+          try {
+            const { sendPushNotification } = await import('@/lib/push')
+            const adminSubs = db
+              .prepare(
+                `SELECT ps.endpoint, ps.p256dh, ps.auth
+                 FROM push_subscriptions ps
+                 JOIN users u ON u.id = ps.user_id
+                 WHERE u.is_admin = 1`
+              )
+              .all() as { endpoint: string; p256dh: string; auth: string }[]
+            for (const sub of adminSubs) {
+              sendPushNotification(sub, {
+                title: 'IcognitoChat — Vendas',
+                body: `🛒 ${data.username} iniciou uma conversa de vendas`,
+              }).catch(() => {/* best-effort */})
+            }
+          } catch {
+            // Push is optional
+          }
+        }
       }
     )
 

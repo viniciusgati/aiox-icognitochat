@@ -39,6 +39,7 @@ interface Stats {
 interface Settings {
   allow_room_creation: string
   admin_only_chat: string
+  allow_contact_admin: string
 }
 
 interface PushUser {
@@ -47,7 +48,24 @@ interface PushUser {
   has_push: boolean
 }
 
-type Tab = 'overview' | 'users' | 'rooms' | 'notifications' | 'settings' | 'system'
+interface AdminMessage {
+  id: number
+  user_id: number
+  username: string
+  message: string
+  read: number
+  created_at: number
+}
+
+interface SalesConversation {
+  slug: string
+  created_by: number
+  username: string
+  last_message: string | null
+  last_activity: number | null
+}
+
+type Tab = 'overview' | 'users' | 'rooms' | 'messages' | 'sales' | 'notifications' | 'settings' | 'system'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -478,6 +496,31 @@ function SettingsTab() {
             />
           </button>
         </label>
+
+        {/* allow_contact_admin */}
+        <label className="flex items-start gap-4 p-4 rounded-xl bg-slate-800 border border-slate-700 cursor-pointer">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-slate-200">Permitir contato com o admin</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Quando desativado, o botão de suporte desaparece da tela dos usuários
+              e a API rejeita novas mensagens.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={settings.allow_contact_admin === '1'}
+            onClick={() => setSettings(s => s ? { ...s, allow_contact_admin: s.allow_contact_admin === '1' ? '0' : '1' } : s)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              settings.allow_contact_admin === '1' ? 'bg-indigo-600' : 'bg-slate-600'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                settings.allow_contact_admin === '1' ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </label>
       </div>
 
       <button
@@ -491,6 +534,142 @@ function SettingsTab() {
   )
 }
 
+// ─── Messages tab ─────────────────────────────────────────────────────────────
+
+function timeAgo(ts: number): string {
+  const diff = Math.floor(Date.now() / 1000) - ts
+  if (diff < 60) return 'agora'
+  if (diff < 3600) return `${Math.floor(diff / 60)}min atrás`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`
+  return `${Math.floor(diff / 86400)}d atrás`
+}
+
+function MessagesTab({
+  onReply,
+}: {
+  onReply: (userId: number, username: string) => void
+}) {
+  const [messages, setMessages] = useState<AdminMessage[]>([])
+  const [unread, setUnread] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [expanded, setExpanded] = useState<number | null>(null)
+  const [markingAll, setMarkingAll] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/admin/messages')
+      if (!res.ok) { setError('Erro ao carregar mensagens'); return }
+      const data = await res.json()
+      setMessages(data.messages)
+      setUnread(data.unread)
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleExpand(msg: AdminMessage) {
+    setExpanded((prev) => (prev === msg.id ? null : msg.id))
+    if (!msg.read) {
+      await fetch(`/api/auth/admin/messages/${msg.id}`, { method: 'PATCH' })
+      setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, read: 1 } : m))
+      setUnread((prev) => Math.max(0, prev - 1))
+    }
+  }
+
+  async function handleMarkAll() {
+    setMarkingAll(true)
+    await fetch('/api/auth/admin/messages', { method: 'PATCH' })
+    setMessages((prev) => prev.map((m) => ({ ...m, read: 1 })))
+    setUnread(0)
+    setMarkingAll(false)
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-slate-400">{messages.length} mensagem(ns)</span>
+        <div className="flex gap-3">
+          {unread > 0 && (
+            <button
+              onClick={handleMarkAll}
+              disabled={markingAll}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+            >
+              Marcar todas como lidas
+            </button>
+          )}
+          <button onClick={load} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            ↺ Atualizar
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {loading ? (
+        <p className="text-slate-500 text-sm py-8 text-center">Carregando…</p>
+      ) : messages.length === 0 ? (
+        <p className="text-slate-500 text-sm py-12 text-center">Nenhuma mensagem recebida</p>
+      ) : (
+        <div className="space-y-2">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`rounded-xl border transition-colors ${
+                msg.read
+                  ? 'bg-slate-900 border-slate-700'
+                  : 'bg-slate-800/60 border-indigo-800/50'
+              }`}
+            >
+              <button
+                className="w-full text-left px-4 py-3 flex items-start gap-3"
+                onClick={() => handleExpand(msg)}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-sm font-mono text-slate-200">{msg.username}</span>
+                    {!msg.read && (
+                      <span className="text-[10px] font-medium bg-indigo-600 text-white px-1.5 py-0.5 rounded-full">
+                        Novo
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-600 ml-auto shrink-0">{timeAgo(msg.created_at)}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 truncate">
+                    {msg.message.slice(0, 80)}{msg.message.length > 80 ? '…' : ''}
+                  </p>
+                </div>
+                <span className="text-slate-600 text-xs mt-0.5">{expanded === msg.id ? '▲' : '▼'}</span>
+              </button>
+
+              {expanded === msg.id && (
+                <div className="px-4 pb-4 space-y-3 border-t border-slate-700/50 pt-3">
+                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{msg.message}</p>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => onReply(msg.user_id, msg.username)}
+                      className="text-xs rounded-lg px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white transition-colors font-medium"
+                    >
+                      ↩ Responder via Push
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Notifications tab ────────────────────────────────────────────────────────
 
 const PUSH_TEMPLATES = [
@@ -500,7 +679,15 @@ const PUSH_TEMPLATES = [
   'Olá {nome}, por favor aguarde.',
 ]
 
-function NotificationsTab() {
+function NotificationsTab({
+  prefilledUserId,
+  prefilledUsername,
+  onPrefilledConsumed,
+}: {
+  prefilledUserId?: number | null
+  prefilledUsername?: string
+  onPrefilledConsumed?: () => void
+}) {
   const [users, setUsers] = useState<PushUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -527,6 +714,18 @@ function NotificationsTab() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Pre-select user when replying from Messages tab
+  useEffect(() => {
+    if (prefilledUserId != null) {
+      setSelectedIds(new Set([prefilledUserId]))
+      setSelectAll(false)
+      setUseCustom(true)
+      setCustomMsg(`Olá ${prefilledUsername ?? ''}, `)
+      onPrefilledConsumed?.()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefilledUserId])
 
   function toggleUser(id: number) {
     setSelectedIds((prev) => {
@@ -715,6 +914,87 @@ function NotificationsTab() {
   )
 }
 
+// ─── Sales tab ────────────────────────────────────────────────────────────────
+
+function SalesTab() {
+  const [conversations, setConversations] = useState<SalesConversation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/admin/sales')
+      if (!res.ok) { setError('Erro ao carregar conversas'); return }
+      const data = await res.json()
+      setConversations(data.rooms ?? [])
+    } catch {
+      setError('Erro de conexão')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const recentCount = conversations.filter(
+    (c) => c.last_activity && (Date.now() / 1000 - c.last_activity) < 86400
+  ).length
+
+  if (loading) return <p className="text-slate-500 text-sm py-8 text-center">Carregando…</p>
+  if (error) return <p className="text-red-400 text-sm py-8 text-center">{error}</p>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-100">Fila de Vendas</h2>
+          {recentCount > 0 && (
+            <p className="text-xs text-slate-400 mt-0.5">{recentCount} conversa{recentCount > 1 ? 's' : ''} com atividade nas últimas 24h</p>
+          )}
+        </div>
+        <button onClick={load} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">↺ Atualizar</button>
+      </div>
+
+      {conversations.length === 0 ? (
+        <p className="text-center text-slate-600 text-sm py-12">Nenhuma conversa de vendas ainda.</p>
+      ) : (
+        <ul className="space-y-2">
+          {conversations.map((conv) => (
+            <li key={conv.slug}>
+              <a
+                href={`/chat/${conv.slug}`}
+                className="block rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 px-4 py-3 transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-100">{conv.username}</p>
+                    {conv.last_message && (
+                      <p className="text-xs text-slate-400 truncate mt-0.5">
+                        {conv.last_message.slice(0, 60)}{conv.last_message.length > 60 ? '…' : ''}
+                      </p>
+                    )}
+                    {!conv.last_message && (
+                      <p className="text-xs text-slate-600 mt-0.5">Sem mensagens ainda</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    {conv.last_activity && (
+                      <p className="text-xs text-slate-500">{formatDate(conv.last_activity)}</p>
+                    )}
+                    <p className="text-xs text-indigo-400 mt-0.5">→ Abrir</p>
+                  </div>
+                </div>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ─── System tab ───────────────────────────────────────────────────────────────
 
 function SystemTab() {
@@ -802,22 +1082,51 @@ function SystemTab() {
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Visão Geral' },
-  { id: 'users', label: 'Usuários' },
-  { id: 'rooms', label: 'Salas' },
-  { id: 'notifications', label: 'Notificações' },
-  { id: 'settings', label: 'Configurações' },
-  { id: 'system', label: 'Sistema' },
-]
-
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('overview')
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [replyUserId, setReplyUserId] = useState<number | null>(null)
+  const [replyUsername, setReplyUsername] = useState('')
+
+  // Fetch unread count on mount and periodically
+  useEffect(() => {
+    async function fetchUnread() {
+      try {
+        const res = await fetch('/api/auth/admin/messages')
+        if (res.ok) {
+          const data = await res.json()
+          setUnreadCount(data.unread ?? 0)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  function handleReply(userId: number, username: string) {
+    setReplyUserId(userId)
+    setReplyUsername(username)
+    setTab('notifications')
+  }
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
     window.location.href = '/'
   }
+
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'overview', label: 'Visão Geral' },
+    { id: 'users', label: 'Usuários' },
+    { id: 'rooms', label: 'Salas' },
+    { id: 'messages', label: unreadCount > 0 ? `Mensagens (${unreadCount})` : 'Mensagens' },
+    { id: 'sales', label: 'Vendas' },
+    { id: 'notifications', label: 'Notificações' },
+    { id: 'settings', label: 'Configurações' },
+    { id: 'system', label: 'Sistema' },
+  ]
 
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100">
@@ -851,7 +1160,9 @@ export default function AdminPage() {
               className={`px-3 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === id
                   ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  : id === 'messages' && unreadCount > 0
+                    ? 'border-transparent text-indigo-300 hover:text-indigo-200'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
               {label}
@@ -864,7 +1175,19 @@ export default function AdminPage() {
         {tab === 'overview' && <OverviewTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'rooms' && <RoomsTab />}
-        {tab === 'notifications' && <NotificationsTab />}
+        {tab === 'messages' && (
+          <MessagesTab
+            onReply={(userId, username) => handleReply(userId, username)}
+          />
+        )}
+        {tab === 'sales' && <SalesTab />}
+        {tab === 'notifications' && (
+          <NotificationsTab
+            prefilledUserId={replyUserId}
+            prefilledUsername={replyUsername}
+            onPrefilledConsumed={() => { setReplyUserId(null); setReplyUsername('') }}
+          />
+        )}
         {tab === 'settings' && <SettingsTab />}
         {tab === 'system' && <SystemTab />}
       </div>

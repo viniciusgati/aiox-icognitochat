@@ -9,7 +9,7 @@ import ChatWindow from '@/components/ChatWindow'
 
 interface Props {
   params: Promise<{ roomId: string }>
-  searchParams: Promise<{ max?: string }>
+  searchParams: Promise<{ max?: string; reason?: string }>
 }
 
 export default async function RoomPage({ params, searchParams }: Props) {
@@ -20,21 +20,40 @@ export default async function RoomPage({ params, searchParams }: Props) {
   }
 
   const { roomId } = await params
-  const { max } = await searchParams
+  const { max, reason } = await searchParams
 
-  // admin_only_chat: non-admins can only access the 'general' room
-  if (!session.isAdmin && getSetting('admin_only_chat') === '1' && roomId !== 'general') {
-    redirect('/chat/general')
+  // admin_only_chat: non-admins can only access 'general' and their own vendas room (1.38)
+  if (
+    !session.isAdmin &&
+    getSetting('admin_only_chat') === '1' &&
+    roomId !== 'general' &&
+    !roomId.startsWith('vendas-')
+  ) {
+    redirect('/chat/general?reason=restricted')
   }
+
   const maxParticipants = max ? parseInt(max, 10) : undefined
 
   const room = db
-    .prepare('SELECT name, is_ephemeral, message_ttl_seconds FROM rooms WHERE slug = ?')
-    .get(roomId) as { name: string; is_ephemeral: number; message_ttl_seconds: number | null } | undefined
+    .prepare('SELECT name, is_ephemeral, message_ttl_seconds, is_private, created_by FROM rooms WHERE slug = ?')
+    .get(roomId) as {
+      name: string
+      is_ephemeral: number
+      message_ttl_seconds: number | null
+      is_private: number
+      created_by: number | null
+    } | undefined
 
   if (!room) {
+    redirect('/chat?reason=not-found')
+  }
+
+  // Private room access: admin bypasses; non-admin only accesses their own private room
+  if (room.is_private && !session.isAdmin && room.created_by !== session.userId) {
     redirect('/chat')
   }
+
+  const restrictedRedirect = reason === 'restricted'
 
   return (
     <ChatWindow
@@ -44,6 +63,7 @@ export default async function RoomPage({ params, searchParams }: Props) {
       isEphemeral={room.is_ephemeral === 1}
       maxParticipants={maxParticipants}
       messageTtlSeconds={room.message_ttl_seconds ?? undefined}
+      restrictedRedirect={restrictedRedirect}
     />
   )
 }

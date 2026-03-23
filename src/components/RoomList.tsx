@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import CreateRoomModal from './CreateRoomModal'
+import ContactAdminModal from './ContactAdminModal'
 import { getUserColor, getUserInitials } from '@/lib/user-color'
 
 interface Room {
@@ -37,11 +38,22 @@ function RoomSkeleton() {
   )
 }
 
-export default function RoomList({ username, isAdmin = false }: { username: string; isAdmin?: boolean }) {
+export default function RoomList({
+  username,
+  isAdmin = false,
+  allowContactAdmin = true,
+}: {
+  username: string
+  isAdmin?: boolean
+  allowContactAdmin?: boolean
+}) {
   const router = useRouter()
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showContactModal, setShowContactModal] = useState(false)
+  const [contactSentToast, setContactSentToast] = useState(false)
+  const [redirectToast, setRedirectToast] = useState<string | null>(null)
 
   const fetchRooms = useCallback(async () => {
     try {
@@ -59,9 +71,35 @@ export default function RoomList({ username, isAdmin = false }: { username: stri
     fetchRooms()
   }, [fetchRooms])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const reason = params.get('reason')
+    if (reason === 'not-found') {
+      setRedirectToast('Sala não encontrada ou já foi encerrada')
+      setTimeout(() => setRedirectToast(null), 5000)
+      history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
+
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/')
+  }
+
+  function handleContactSent() {
+    setContactSentToast(true)
+    setTimeout(() => setContactSentToast(false), 3500)
+  }
+
+  async function handleSupportClick() {
+    try {
+      const res = await fetch('/api/sales-room')
+      const data = await res.json()
+      if (data.slug) router.push(`/chat/${data.slug}`)
+    } catch {
+      // fallback: open contact modal if sales room fails
+      setShowContactModal(true)
+    }
   }
 
   function handleRoomCreated(room: Room, maxParticipants?: number) {
@@ -90,6 +128,15 @@ export default function RoomList({ username, isAdmin = false }: { username: stri
             >
               ⚙️ Admin
             </a>
+          )}
+          {!isAdmin && (
+            <button
+              onClick={handleSupportClick}
+              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors px-2 py-1 rounded-lg hover:bg-surface-700"
+              title="Falar com o Admin"
+            >
+              💬 Suporte
+            </button>
           )}
           <button
             onClick={handleLogout}
@@ -166,6 +213,25 @@ export default function RoomList({ username, isAdmin = false }: { username: stri
           onClose={() => setShowModal(false)}
           onCreated={handleRoomCreated}
         />
+      )}
+
+      {showContactModal && (
+        <ContactAdminModal
+          onClose={() => setShowContactModal(false)}
+          onSent={handleContactSent}
+        />
+      )}
+
+      {contactSentToast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-green-800 text-green-100 text-sm px-5 py-3 rounded-xl shadow-lg">
+          Mensagem enviada ao admin ✓
+        </div>
+      )}
+
+      {redirectToast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-zinc-800 text-zinc-100 text-sm px-5 py-3 rounded-xl shadow-lg border border-white/10">
+          {redirectToast}
+        </div>
       )}
     </>
   )

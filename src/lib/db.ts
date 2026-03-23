@@ -107,10 +107,24 @@ db.exec(`
   );
 `)
 
+// Migration: add admin_messages table if not present
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    read INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+  CREATE INDEX IF NOT EXISTS idx_admin_messages_read ON admin_messages(read);
+  CREATE INDEX IF NOT EXISTS idx_admin_messages_user ON admin_messages(user_id);
+`)
+
 // Seed default settings
 const settingsDefaults: Record<string, string> = {
   allow_room_creation: '1',
   admin_only_chat: '0',
+  allow_contact_admin: '1',
 }
 for (const [key, value] of Object.entries(settingsDefaults)) {
   db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)').run(key, value)
@@ -206,6 +220,55 @@ export function destroyAllData(): { users: number; rooms: number } {
     const users = db.prepare('DELETE FROM users').run()
     return { users: users.changes, rooms: rooms.changes }
   })()
+}
+
+export interface AdminMessage {
+  id: number
+  user_id: number
+  username: string
+  message: string
+  read: number
+  created_at: number
+}
+
+/** Insert a message from a user to the admin. Returns the new row id. */
+export function insertAdminMessage(userId: number, message: string): number {
+  const result = db
+    .prepare('INSERT INTO admin_messages (user_id, message) VALUES (?, ?)')
+    .run(userId, message)
+  return result.lastInsertRowid as number
+}
+
+/** Get paginated admin messages with username joined, newest first. */
+export function getAdminMessages(page = 1, perPage = 20): AdminMessage[] {
+  const offset = (page - 1) * perPage
+  return db
+    .prepare(
+      `SELECT am.id, am.user_id, u.username, am.message, am.read, am.created_at
+       FROM admin_messages am
+       JOIN users u ON u.id = am.user_id
+       ORDER BY am.created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(perPage, offset) as AdminMessage[]
+}
+
+/** Mark a single message as read. */
+export function markMessageRead(id: number): void {
+  db.prepare('UPDATE admin_messages SET read = 1 WHERE id = ?').run(id)
+}
+
+/** Mark all messages as read. */
+export function markAllMessagesRead(): void {
+  db.prepare('UPDATE admin_messages SET read = 1 WHERE read = 0').run()
+}
+
+/** Count unread admin messages. */
+export function countUnreadMessages(): number {
+  const row = db
+    .prepare('SELECT COUNT(*) as count FROM admin_messages WHERE read = 0')
+    .get() as { count: number }
+  return row.count
 }
 
 /**

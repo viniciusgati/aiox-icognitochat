@@ -20,6 +20,7 @@ interface Props {
   isEphemeral?: boolean
   maxParticipants?: number
   messageTtlSeconds?: number
+  restrictedRedirect?: boolean
 }
 
 function formatTtl(seconds: number): string {
@@ -28,11 +29,12 @@ function formatTtl(seconds: number): string {
   return `${seconds / 3600} hora`
 }
 
-export default function ChatWindow({ roomId, username, roomName, isEphemeral = false, maxParticipants, messageTtlSeconds }: Props) {
+export default function ChatWindow({ roomId, username, roomName, isEphemeral = false, maxParticipants, messageTtlSeconds, restrictedRedirect = false }: Props) {
   const router = useRouter()
   const [screenShareBanner, setScreenShareBanner] = useState<number | null>(null) // countdown seconds
   const [screenShareKickNotice, setScreenShareKickNotice] = useState<string | null>(null)
   const [localTtl, setLocalTtl] = useState<LocalTtlOption>(() => getPrivacyPrefs().localTtl)
+  const [showRestrictedBanner, setShowRestrictedBanner] = useState(restrictedRedirect)
 
   const effectiveTtlSeconds = getEffectiveTtlSeconds(localTtl, messageTtlSeconds)
 
@@ -134,6 +136,17 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       document.body.classList.remove('screen-sharing-active')
     }
   }, [isBeingCaptured, reportScreenShare, roomId])
+
+  // Auto-dismiss restricted redirect banner after 5s
+  useEffect(() => {
+    if (!showRestrictedBanner) return
+    // Clean the reason param from URL without reload
+    const url = new URL(window.location.href)
+    url.searchParams.delete('reason')
+    window.history.replaceState(null, '', url.toString())
+    const t = setTimeout(() => setShowRestrictedBanner(false), 5000)
+    return () => clearTimeout(t)
+  }, [showRestrictedBanner])
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -256,6 +269,19 @@ export default function ChatWindow({ roomId, username, roomName, isEphemeral = f
       {screenShareBanner !== null && (
         <div className="fixed inset-x-0 top-0 z-[300] flex items-center justify-center bg-red-600 text-white text-sm font-semibold py-3 px-4 gap-2">
           <span>⚠️ Compartilhamento de tela detectado. Sua sessão será encerrada em {screenShareBanner}s…</span>
+        </div>
+      )}
+      {/* Restricted redirect banner */}
+      {showRestrictedBanner && (
+        <div className="fixed inset-x-0 top-0 z-[290] flex items-center justify-between bg-amber-700/90 text-white text-sm font-medium py-2.5 px-4 gap-2">
+          <span>⚠️ Acesso restrito — apenas a sala Geral está disponível neste momento</span>
+          <button
+            onClick={() => setShowRestrictedBanner(false)}
+            className="text-white/70 hover:text-white transition-colors shrink-0 text-lg leading-none"
+            aria-label="Fechar"
+          >
+            ×
+          </button>
         </div>
       )}
       {/* Screen share kick notification for other participants */}

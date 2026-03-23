@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSetting, setSetting } from '@/lib/db'
 import { requireAdmin } from '@/lib/admin-auth'
 
-const ALLOWED_KEYS = new Set(['allow_room_creation', 'admin_only_chat'])
+const ALLOWED_KEYS = new Set(['allow_room_creation', 'admin_only_chat', 'allow_contact_admin'])
 
 export async function GET() {
   const auth = await requireAdmin()
@@ -11,6 +11,7 @@ export async function GET() {
   return NextResponse.json({
     allow_room_creation: getSetting('allow_room_creation') ?? '1',
     admin_only_chat: getSetting('admin_only_chat') ?? '0',
+    allow_contact_admin: getSetting('allow_contact_admin') ?? '1',
   })
 }
 

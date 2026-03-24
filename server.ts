@@ -306,6 +306,32 @@ app.prepare().then(() => {
           replyTo: data.replyTo,
         })
 
+        // Push notification to room participants with subscription (best-effort)
+        try {
+          const { sendPushNotification } = await import('@/lib/push')
+          const socketsInRoom = await io.in(data.roomId).fetchSockets()
+          const recipientUserIds = socketsInRoom
+            .map((s) => s.data.userId as number | undefined)
+            .filter((id): id is number => !!id && id !== socket.data.userId)
+
+          if (recipientUserIds.length > 0) {
+            const placeholders = recipientUserIds.map(() => '?').join(',')
+            const subs = db
+              .prepare(
+                `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id IN (${placeholders})`
+              )
+              .all(...recipientUserIds) as { endpoint: string; p256dh: string; auth: string }[]
+            for (const sub of subs) {
+              sendPushNotification(sub, {
+                title: 'IcognitoChat',
+                body: `Nova mensagem de ${data.username}`,
+              }).catch(() => {/* best-effort */})
+            }
+          }
+        } catch {
+          // Push é opcional — não impacta o relay
+        }
+
         // Notify admin when a message arrives in a vendas-* room
         if (data.roomId.startsWith('vendas-') && !salesNotified.has(data.roomId)) {
           salesNotified.add(data.roomId)

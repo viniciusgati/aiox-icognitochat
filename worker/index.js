@@ -18,7 +18,13 @@ self.addEventListener('push', (event) => {
     data: { url: '/' },
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      const appVisible = clientList.some((c) => c.visibilityState === 'visible')
+      if (appVisible) return // app em foco — não exibir
+      return self.registration.showNotification(title, options)
+    })
+  )
 })
 
 self.addEventListener('notificationclick', (event) => {
